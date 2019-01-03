@@ -6,7 +6,15 @@ import (
 
 type H256 [32]byte
 
+func (h *H256) ParityDecode(pd paritycodec.Decoder) {
+	pd.Read(h[:])
+}
+
 type H512 [64]byte
+
+func (h *H512) ParityDecode(pd paritycodec.Decoder) {
+	pd.Read(h[:])
+}
 
 type AuthorityId [32]byte
 

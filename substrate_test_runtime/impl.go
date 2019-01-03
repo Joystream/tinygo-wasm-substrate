@@ -43,6 +43,13 @@ type Transfer struct {
 	nonce  uint64
 }
 
+func (t *Transfer) ParityDecode(pd paritycodec.Decoder) {
+	(*H256)(&t.from).ParityDecode(pd)
+	(*H256)(&t.to).ParityDecode(pd)
+	t.amount = pd.DecodeUint(8)
+	t.nonce = pd.DecodeUint(8)
+}
+
 type Ed25519Signature H512
 
 type Extrinsic struct {
@@ -50,67 +57,49 @@ type Extrinsic struct {
 	signature Ed25519Signature
 }
 
+func (e *Extrinsic) ParityDecode(pd paritycodec.Decoder) {
+	e.transfer.ParityDecode(pd)
+	(*H512)(&e.signature).ParityDecode(pd)
+}
+
 type BlockNumber uint64
 
-type HashOutput H256 // BlakeTwo256::Outpus
+type HashOutput H256 // BlakeTwo256::Output
 
 type Header struct {
 	/// The parent hash.
-	parent_hash HashOutput
+	parentHash HashOutput
 	/// The block number.
 	number BlockNumber
 	/// The state trie merkle root
-	state_root HashOutput
+	stateRoot HashOutput
 	/// The merkle root of the extrinsics.
-	extrinsics_root HashOutput
+	extrinsicsRoot HashOutput
 	/// A chain-specific digest of data useful for light clients or referencing auxiliary data.
 	digest Digest
 }
 
-type Digest struct {
-	logs []DigestItem
+func (h *Header) ParityDecode(pd paritycodec.Decoder) {
+	(*H256)(&h.parentHash).ParityDecode(pd)
+	h.number = BlockNumber(pd.DecodeUint(8))
+	(*H256)(&h.stateRoot).ParityDecode(pd)
+	(*H256)(&h.extrinsicsRoot).ParityDecode(pd)
+	(*H256)(&h.extrinsicsRoot).ParityDecode(pd)
 }
 
-type DigestItem interface {
-	ImplementsDigestItem()
-}
+type Extrinsics []Extrinsic
 
-/// System digest item announcing that authorities set has been changed
-/// in the block. Contains the new set of authorities.
-
-type AuthoritiesChange []AuthorityId
-
-func (di AuthoritiesChange) ImplementsDigestItem() {}
-
-/// System digest item that contains the root of changes trie at given
-/// block. It is created for every block iff runtime supports changes
-/// trie creation.
-type ChangesTrieRoot H256
-
-func (di ChangesTrieRoot) ImplementsDigestItem() {}
-
-type Signature H512
-
-/// Put a Seal on it
-type Seal struct {
-	number    uint64 // ?????
-	signature Signature
-}
-
-func (di Seal) ImplementsDigestItem() {}
-
-/// Any 'non-system' digest item, opaque to the native code.
-type OtherDigestItem []byte
-
-func (di OtherDigestItem) ImplementsDigestItem() {}
+func (s *Extrinsics) Make(l int)                                        { *s = make([]Extrinsic, l) }
+func (s *Extrinsics) ParityDecodeElement(i int, pd paritycodec.Decoder) { (*s)[i].ParityDecode(pd) }
 
 type Block struct {
 	header     Header
-	extrinsics []Extrinsic
+	extrinsics Extrinsics
 }
 
 func (b *Block) ParityDecode(pd paritycodec.Decoder) {
-	// TODO
+	b.header.ParityDecode(pd)
+	pd.DecodeSlice(&b.extrinsics)
 }
 
 //go:export Core_execute_block
