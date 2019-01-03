@@ -10,8 +10,12 @@ type Digest struct {
 	logs []DigestItem
 }
 
-func (s *Digest) Make(l int)                                        { s.logs = make([]DigestItem, l) }
-func (s *Digest) ParityDecodeElement(i int, pd paritycodec.Decoder) { s.logs[i] = DecodeDigestItem(pd) }
+func (d *Digest) ParityDecode(pd paritycodec.Decoder) {
+	pd.DecodeCollection(
+		func(n int) { d.logs = make([]DigestItem, n) },
+		func(i int) { d.logs[i] = DecodeDigestItem(pd) },
+	)
+}
 
 type DigestItemType int
 
@@ -33,7 +37,7 @@ func DecodeDigestItem(pd paritycodec.Decoder) DigestItem {
 		return OtherDigestItem(pd.DecodeByteSlice())
 	case DtAuthoritiesChange:
 		ac := AuthoritiesChange{}
-		pd.DecodeSlice(&ac)
+		ac.ParityDecode(pd)
 		return ac
 	case DtChangesTrieRoot:
 		ctr := ChangesTrieRoot{}
@@ -52,9 +56,11 @@ func DecodeDigestItem(pd paritycodec.Decoder) DigestItem {
 /// in the block. Contains the new set of authorities.
 type AuthoritiesChange []AuthorityId
 
-func (a *AuthoritiesChange) Make(l int) { *a = make([]AuthorityId, l) }
-func (a *AuthoritiesChange) ParityDecodeElement(i int, pd paritycodec.Decoder) {
-	(*H256)(&(*a)[i]).ParityDecode(pd)
+func (a *AuthoritiesChange) ParityDecode(pd paritycodec.Decoder) {
+	pd.DecodeCollection(
+		func(n int) { *a = make([]AuthorityId, n) },
+		func(i int) { (*H256)(&(*a)[i]).ParityDecode(pd) },
+	)
 }
 
 func (di AuthoritiesChange) ImplementsDigestItem() DigestItemType { return DtAuthoritiesChange }

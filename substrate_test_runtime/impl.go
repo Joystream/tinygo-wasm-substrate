@@ -89,8 +89,12 @@ func (h *Header) ParityDecode(pd paritycodec.Decoder) {
 
 type Extrinsics []Extrinsic
 
-func (s *Extrinsics) Make(l int)                                        { *s = make([]Extrinsic, l) }
-func (s *Extrinsics) ParityDecodeElement(i int, pd paritycodec.Decoder) { (*s)[i].ParityDecode(pd) }
+func (e *Extrinsics) ParityDecode(pd paritycodec.Decoder) {
+	pd.DecodeCollection(
+		func(n int) { *e = make([]Extrinsic, n) },
+		func(i int) { (&(*e)[i]).ParityDecode(pd) },
+	)
+}
 
 type Block struct {
 	header     Header
@@ -99,7 +103,7 @@ type Block struct {
 
 func (b *Block) ParityDecode(pd paritycodec.Decoder) {
 	b.header.ParityDecode(pd)
-	pd.DecodeSlice(&b.extrinsics)
+	b.extrinsics.ParityDecode(pd)
 }
 
 //go:export Core_execute_block
