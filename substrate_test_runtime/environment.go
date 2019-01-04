@@ -1,7 +1,9 @@
 package substratetestruntime
 
 import (
+	"bytes"
 	"io"
+	"strconv"
 	"unsafe"
 )
 
@@ -88,6 +90,7 @@ func NewMemReader(offset *byte, length uintptr) MemReader {
 }
 
 func (r *MemReader) Read(p []byte) (n int, err error) {
+	print(strconv.Itoa(int(r.curPtr)))
 	for i := range p {
 		if r.curPtr >= r.end {
 			return i, io.EOF
@@ -97,3 +100,28 @@ func (r *MemReader) Read(p []byte) (n int, err error) {
 	}
 	return len(p), nil
 }
+
+func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
+	lengths := make([]uint32, len(values))
+	for i, v := range values {
+		lengths[i] = getLen([]byte(v))
+	}
+	joined := bytes.Join(values, []byte{})
+	var result [32]byte
+	resultPtr := &result[0]
+
+	ext_blake2_256_enumerated_trie_root(
+		getOffset([]byte(joined)),
+		&lengths[0],
+		uint32(len(lengths)),
+		resultPtr,
+	)
+	return result
+}
+
+// func expectCollectionSize(expected int, pd paritycodec.Decoder) {
+// 	n := int(pd.DecodeUintCompact())
+// 	if n != expected {
+// 		panic("Expected a collection of " + strconv.Itoa(expected) + " elements, got " + strconv.Itoa(n))
+// 	}
+// }
