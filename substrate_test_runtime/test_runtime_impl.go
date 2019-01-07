@@ -58,15 +58,6 @@ func (t Transfer) ParityEncode(pe paritycodec.Encoder) {
 	pe.EncodeUint(t.nonce, 8)
 }
 
-type Ed25519Signature H512
-
-func (s Ed25519Signature) Verify(message []byte, signer H256) {
-	errCode := ext_ed25519_verify(getOffset(message), getLen(message), &s[0], &signer[0])
-	if errCode != 0 {
-		panic("Invalid signature")
-	}
-}
-
 type Extrinsic struct {
 	transfer  Transfer
 	signature Ed25519Signature
@@ -188,10 +179,6 @@ func executeTransactionBackend(utx Extrinsic) Result {
 	from_balance_key := concatByteSlices(BALANCE_OF, paritycodec.Encode(H256(utx.transfer.from)))
 	from_balance := storageGetUint64Or(from_balance_key, 0)
 
-	print("ooo")
-	print(strconv.FormatUint(from_balance, 10))
-	print(strconv.FormatUint(utx.transfer.amount, 10))
-
 	// enact transfer
 	if utx.transfer.amount > from_balance {
 		return Err(CantPay)
@@ -217,7 +204,6 @@ func digestEqual(d1 Digest, d2 Digest) bool {
 
 //go:export Core_execute_block
 func executeBlock(offset *byte, length uintptr) uint64 {
-	print(strconv.Itoa(int(length)))
 	block := Block{}
 	mr := NewMemReader(offset, length)
 	pd := paritycodec.Decoder{&mr}
@@ -229,28 +215,24 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 		txs[i] = paritycodec.Encode(e)
 	}
 
-	print("tran root")
 	txsRoot := enumeratedTrieRootBlake256ForByteSlices(txs)
 	if txsRoot != block.header.extrinsicsRoot {
 		panic("Transaction trie root must be valid.")
 	}
 
 	// execute transactions
-	print("Ex tran")
 	for i, e := range block.extrinsics {
 		var buffer = bytes.Buffer{}
 		paritycodec.Encoder{&buffer}.EncodeUint(uint64(i), 4)
 		storagePut(EXTRINSIC_INDEX, buffer.Bytes())
 		res := executeTransactionBackend(e)
-		storage_kill(EXTRINSIC_INDEX)
+		storageKill(EXTRINSIC_INDEX)
 		if res.isError {
 			panic("Extrinsic error " + strconv.Itoa(int(res.okOrErrorCode)))
 		}
 	}
 
-	sr := storage_root()
-	print(sr.toHex())
-	print((*H256)(&block.header.stateRoot).toHex())
+	sr := storageRoot()
 	if *sr != H256(block.header.stateRoot) {
 		panic("Storage root must match that calculated.")
 	}
@@ -261,7 +243,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 		panic("whoa")
 	}
 	phb := block.header.parentHash[:]
-	ok, scr := storage_changes_root(phb, uint64(block.header.number)-1)
+	ok, scr := storageChangesRoot(phb, uint64(block.header.number)-1)
 	if ok {
 		digest.logs = append(digest.logs, ChangesTrieRoot(*scr))
 	}
@@ -271,6 +253,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	return 0
 }
 
+// TODO: learn to build WASM modules in TinyGo without main()
 func main() {
 
 }
