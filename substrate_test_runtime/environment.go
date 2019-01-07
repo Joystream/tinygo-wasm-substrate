@@ -2,8 +2,11 @@ package substratetestruntime
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
+	"math"
 	"strconv"
+	"strings"
 	"unsafe"
 )
 
@@ -21,7 +24,10 @@ func ext_print_utf8(utf8_data *byte, utf8_len uint32)
 func ext_set_storage(key_data *byte, key_len uint32, value_data *byte, value_len uint32)
 
 //go:export ext_get_allocated_storage
-func ext_get_allocated_storage(key_data *byte, key_len uint32, written_out_addr *uint32) *byte
+func ext_get_allocated_storage(key_data *byte, key_len uint32, value_len_ptr *uint32) *byte
+
+//go:export ext_clear_storage
+func ext_clear_storage(key_data *byte, key_len uint32)
 
 //go:export ext_blake2_256
 func ext_blake2_256(data *byte, len uint32, out *byte)
@@ -38,9 +44,18 @@ func ext_ed25519_verify(msg_data *byte, msg_len uint32, sig_data *byte, pubkey_d
 //go:export ext_blake2_256_enumerated_trie_root
 func ext_blake2_256_enumerated_trie_root(values_data *byte, lens_data_addr *uint32, lens_len uint32, resultPtr *byte)
 
+//go:export ext_storage_root
+func ext_storage_root(resultPtr *H256)
+
+//go:export ext_storage_changes_root
+func ext_storage_changes_root(parent_hash_data *byte, parent_hash_len uint32, parent_num uint64, result *H256) uint32
+
 // Helper functions
 
 func getOffset(b []byte) *byte {
+	if len(b) == 0 {
+		return nil
+	}
 	return &b[0]
 }
 
@@ -67,6 +82,24 @@ func print(s string) {
 	ext_print_utf8(&b[0], uint32(len(b)))
 }
 
+func sprintBytes(bs []byte) string {
+	s1 := []string{}
+	s2 := []string{}
+	for _, b := range bs {
+		ss := strconv.FormatUint(uint64(b), 10)
+		if len(ss) < 2 {
+			ss = "0" + ss
+		}
+		s2 = append(s2, ss)
+		if b >= 32 && b < 128 {
+			s1 = append(s1, string(rune(b)))
+		} else {
+			s1 = append(s1, "?")
+		}
+	}
+	return strings.Join(s1, "") + " / " + strings.Join(s2, " ")
+}
+
 //go:export io_get_stdout
 func io_get_stdout() int32 {
 	return 0 // Ignored in resource_write
@@ -90,7 +123,6 @@ func NewMemReader(offset *byte, length uintptr) MemReader {
 }
 
 func (r *MemReader) Read(p []byte) (n int, err error) {
-	print(strconv.Itoa(int(r.curPtr)))
 	for i := range p {
 		if r.curPtr >= r.end {
 			return i, io.EOF
@@ -103,19 +135,27 @@ func (r *MemReader) Read(p []byte) (n int, err error) {
 
 func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	lengths := make([]uint32, len(values))
+	print("for")
 	for i, v := range values {
 		lengths[i] = getLen([]byte(v))
 	}
+	print("joining")
 	joined := bytes.Join(values, []byte{})
 	var result [32]byte
 	resultPtr := &result[0]
 
+	ptrLengths := (*uint32)(nil)
+	if len(lengths) > 0 {
+		ptrLengths = &lengths[0]
+	}
+	print("call ext")
 	ext_blake2_256_enumerated_trie_root(
 		getOffset([]byte(joined)),
-		&lengths[0],
+		ptrLengths,
 		uint32(len(lengths)),
 		resultPtr,
 	)
+	print("ext done")
 	return result
 }
 
@@ -125,3 +165,105 @@ func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 // 		panic("Expected a collection of " + strconv.Itoa(expected) + " elements, got " + strconv.Itoa(n))
 // 	}
 // }
+
+func storagePut(key []byte, value []byte) {
+	key = hashStorageKey(key)
+	ext_set_storage(getOffset(key), getLen(key), getOffset(value), getLen(value))
+}
+
+func storagePutUint64(key []byte, value uint64) {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, value)
+	storagePut(key, buf)
+}
+
+func slice(offset *byte, length uint32) []byte {
+	arrayZeroPtr := (*[math.MaxInt32]byte)(unsafe.Pointer(uintptr(0)))
+	uo := uintptr(unsafe.Pointer(offset))
+	ul := uintptr(length)
+	return (*arrayZeroPtr)[uo : uo+ul]
+}
+
+func hashStorageKey(key []byte) []byte {
+	result := make([]byte, 16)
+	resultPtr := getOffset(result)
+	ext_twox_128(getOffset(key), getLen(key), resultPtr)
+	return result
+}
+
+func storageGet(key []byte) (bool, []byte) {
+	key = hashStorageKey(key)
+	var valueLen uint32
+	print("###############")
+	print(sprintBytes(key))
+	valuePtr := ext_get_allocated_storage(getOffset(key), getLen(key), &valueLen)
+	print(strconv.Itoa(int(valueLen)))
+	if valueLen == math.MaxUint32 {
+		return false, []byte{}
+	}
+	return true, slice(valuePtr, valueLen)
+}
+
+func storageGetUint64Or(key []byte, deflt uint64) uint64 {
+	ok, buf := storageGet(key)
+	if ok {
+		return binary.LittleEndian.Uint64(buf)
+	}
+	return deflt
+}
+
+func storage_kill(key []byte) {
+	key = hashStorageKey(key)
+	ext_clear_storage(getOffset(key), getLen(key))
+}
+
+// TODO: avoid copy?
+func storage_root() *H256 {
+	var res H256
+	ext_storage_root(&res)
+	return &res
+}
+
+type Error struct {
+	message string
+}
+
+func (e Error) Error() string {
+	return e.message
+}
+
+func concatByteSlices(a []byte, b []byte) []byte {
+	r := make([]byte, len(a)+len(b))
+	copy(r[:len(a)], a)
+	copy(r[len(a):], b)
+	return r
+}
+
+//go:export memset
+func memset(ptr unsafe.Pointer, c byte, size uintptr) unsafe.Pointer {
+	for i := uintptr(0); i < size; i++ {
+		*(*byte)(unsafe.Pointer(uintptr(ptr) + i)) = c
+	}
+	return ptr
+}
+
+// // TODO: why do we need this, as opposed to runtime.memmove
+// //go:export memmove
+// func memmove(dst, src unsafe.Pointer, size uintptr) {
+// 	if uintptr(dst) < uintptr(src) {
+// 		// Copy forwards.
+// 		memcpy(dst, src, size)
+// 		return
+// 	}
+// 	// Copy backwards.
+// 	for i := size; i != 0; {
+// 		i--
+// 		*(*uint8)(unsafe.Pointer(uintptr(dst) + i)) = *(*uint8)(unsafe.Pointer(uintptr(src) + i))
+// 	}
+// }
+
+func storage_changes_root(parentHash []byte, parentNum uint64) (bool, *H256) {
+	var res H256
+	ok := ext_storage_changes_root(getOffset(parentHash), getLen(parentHash), parentNum, &res) > 0
+	return ok, &res
+}

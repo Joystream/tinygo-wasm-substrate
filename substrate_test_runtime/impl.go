@@ -1,6 +1,7 @@
 package substratetestruntime
 
 import (
+	"bytes"
 	"strconv"
 
 	paritycodec "github.com/kyegupov/parity-codec-go/noreflect"
@@ -44,16 +45,13 @@ type Transfer struct {
 }
 
 func (t *Transfer) ParityDecode(pd paritycodec.Decoder) {
-	print("Transfer")
 	(*H256)(&t.from).ParityDecode(pd)
-	print("Transfer to")
 	(*H256)(&t.to).ParityDecode(pd)
-	print("Transfer amo")
 	t.amount = pd.DecodeUint(8)
 	t.nonce = pd.DecodeUint(8)
 }
 
-func (t *Transfer) ParityEncode(pe paritycodec.Encoder) {
+func (t Transfer) ParityEncode(pe paritycodec.Encoder) {
 	(H256)(t.from).ParityEncode(pe)
 	(H256)(t.to).ParityEncode(pe)
 	pe.EncodeUint(t.amount, 8)
@@ -62,15 +60,20 @@ func (t *Transfer) ParityEncode(pe paritycodec.Encoder) {
 
 type Ed25519Signature H512
 
+func (s Ed25519Signature) Verify(message []byte, signer H256) {
+	errCode := ext_ed25519_verify(getOffset(message), getLen(message), &s[0], &signer[0])
+	if errCode != 0 {
+		panic("Invalid signature")
+	}
+}
+
 type Extrinsic struct {
 	transfer  Transfer
 	signature Ed25519Signature
 }
 
 func (e *Extrinsic) ParityDecode(pd paritycodec.Decoder) {
-	print("Extrinsic")
 	e.transfer.ParityDecode(pd)
-	print("Extrinsic sig")
 	(*H512)(&e.signature).ParityDecode(pd)
 }
 
@@ -97,22 +100,16 @@ type Header struct {
 }
 
 func (h *Header) ParityDecode(pd paritycodec.Decoder) {
-	print("Header 1")
 	(*H256)(&h.parentHash).ParityDecode(pd)
-	print("Header 2")
 	h.number = BlockNumber(pd.DecodeUintCompact())
-	print("Header 3")
 	(*H256)(&h.stateRoot).ParityDecode(pd)
-	print("Header 4")
 	(*H256)(&h.extrinsicsRoot).ParityDecode(pd)
-	print("Header 5")
 	(&h.digest).ParityDecode(pd)
 }
 
 type Extrinsics []Extrinsic
 
 func (e *Extrinsics) ParityDecode(pd paritycodec.Decoder) {
-	print("Extrinsics")
 	pd.DecodeCollection(
 		func(n int) { *e = make([]Extrinsic, n) },
 		func(i int) { (&(*e)[i]).ParityDecode(pd) },
@@ -132,9 +129,90 @@ type Block struct {
 }
 
 func (b *Block) ParityDecode(pd paritycodec.Decoder) {
-	print("Block")
 	b.header.ParityDecode(pd)
 	b.extrinsics.ParityDecode(pd)
+}
+
+var EXTRINSIC_INDEX = []byte(":extrinsic_index")
+
+type Result struct {
+	isError       bool
+	okOrErrorCode byte
+}
+
+type ApplyError byte
+
+type ApplyOutcome byte
+
+func Ok(v ApplyOutcome) Result {
+	return Result{false, byte(v)}
+}
+
+func Err(v ApplyError) Result {
+	return Result{true, byte(v)}
+}
+
+const (
+	/// Bad signature.
+	BadSignature ApplyError = 0
+	/// Nonce too low.
+	Stale ApplyError = 1
+	/// Nonce too high.
+	Future ApplyError = 2
+	/// Sending account had too low a balance.
+	CantPay ApplyError = 3
+	/// Successful application (extrinsic reported no issue).
+	Success ApplyOutcome = 0
+	/// Failed application (extrinsic was probably a no-op other than fees).
+	Fail ApplyOutcome = 1
+)
+
+var NONCE_OF = []byte("nonce:")
+var BALANCE_OF = []byte("balance:")
+
+func executeTransactionBackend(utx Extrinsic) Result {
+	// check signature
+	utx.signature.Verify(paritycodec.Encode(utx.transfer), H256(utx.transfer.from))
+
+	// check nonce
+	nonce_key := concatByteSlices(NONCE_OF, paritycodec.Encode(H256(utx.transfer.from)))
+	expected_nonce := storageGetUint64Or(nonce_key, 0)
+	if utx.transfer.nonce != expected_nonce {
+		return Err(Stale)
+	}
+
+	// increment nonce in storage
+	storagePutUint64(nonce_key, expected_nonce+1)
+
+	// check sender balance
+	from_balance_key := concatByteSlices(BALANCE_OF, paritycodec.Encode(H256(utx.transfer.from)))
+	from_balance := storageGetUint64Or(from_balance_key, 0)
+
+	print("ooo")
+	print(strconv.FormatUint(from_balance, 10))
+	print(strconv.FormatUint(utx.transfer.amount, 10))
+
+	// enact transfer
+	if utx.transfer.amount > from_balance {
+		return Err(CantPay)
+	}
+	to_balance_key := concatByteSlices(BALANCE_OF, paritycodec.Encode(H256(utx.transfer.to)))
+	to_balance := storageGetUint64Or(to_balance_key, 0)
+	storagePutUint64(from_balance_key, from_balance-utx.transfer.amount)
+	storagePutUint64(to_balance_key, to_balance+utx.transfer.amount)
+	return Ok(Success)
+}
+
+func digestEqual(d1 Digest, d2 Digest) bool {
+	if len(d1.logs) != len(d2.logs) {
+		return false
+	}
+	for i := range d1.logs {
+		if d1.logs[i] != d2.logs[i] {
+			return false
+		}
+	}
+	return true
 }
 
 //go:export Core_execute_block
@@ -144,39 +222,52 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	mr := NewMemReader(offset, length)
 	pd := paritycodec.Decoder{&mr}
 	block.ParityDecode(pd)
-	// header := block.header
 
 	// check transaction trie root represents the transactions.
-	// txs := make([][]byte, len(block.extrinsics))
-	// for i, e := range block.extrinsics {
-	// 	txs[i] = paritycodec.Encode(e)
-	// }
+	txs := make([][]byte, len(block.extrinsics))
+	for i, e := range block.extrinsics {
+		txs[i] = paritycodec.Encode(e)
+	}
 
-	// txsRoot := enumeratedTrieRootBlake256ForByteSlices(txs)
-	// if txsRoot != header.extrinsicsRoot {
-	// 	panic("Transaction trie root must be valid.")
-	// }
-	// info_expect_equal_hash(&txs_root, &header.extrinsics_root)
-	// assert!(txs_root == header.extrinsics_root, )
+	print("tran root")
+	txsRoot := enumeratedTrieRootBlake256ForByteSlices(txs)
+	if txsRoot != block.header.extrinsicsRoot {
+		panic("Transaction trie root must be valid.")
+	}
 
-	// // execute transactions
-	// block.extrinsics.iter().enumerate().for_each(|(i, e)| {
-	// 	storage::unhashed::put(well_known_keys::EXTRINSIC_INDEX, &(i as u32))
-	// 	execute_transaction_backend(e).map_err(|_| ()).expect("Extrinsic error")
-	// 	storage::unhashed::kill(well_known_keys::EXTRINSIC_INDEX)
-	// })
+	// execute transactions
+	print("Ex tran")
+	for i, e := range block.extrinsics {
+		var buffer = bytes.Buffer{}
+		paritycodec.Encoder{&buffer}.EncodeUint(uint64(i), 4)
+		storagePut(EXTRINSIC_INDEX, buffer.Bytes())
+		res := executeTransactionBackend(e)
+		storage_kill(EXTRINSIC_INDEX)
+		if res.isError {
+			panic("Extrinsic error " + strconv.Itoa(int(res.okOrErrorCode)))
+		}
+	}
 
-	// // check storage root.
-	// let storage_root = storage_root().into()
-	// info_expect_equal_hash(&storage_root, &header.state_root)
-	// assert!(storage_root == header.state_root, "Storage root must match that calculated.")
+	sr := storage_root()
+	print(sr.toHex())
+	print((*H256)(&block.header.stateRoot).toHex())
+	if *sr != H256(block.header.stateRoot) {
+		panic("Storage root must match that calculated.")
+	}
 
-	// // check digest
-	// let mut digest = Digest::default()
-	// if let Some(storage_changes_root) = storage_changes_root(header.parent_hash.into(), header.number - 1) {
-	// 	digest.push(generic::DigestItem::ChangesTrieRoot::<Hash, u64>(storage_changes_root.into()))
-	// }
-	// assert!(digest == header.digest, "Header digest items must match that calculated.")
+	// check digest
+	digest := Digest{[]DigestItem{}}
+	if len(digest.logs) > 0 {
+		panic("whoa")
+	}
+	phb := block.header.parentHash[:]
+	ok, scr := storage_changes_root(phb, uint64(block.header.number)-1)
+	if ok {
+		digest.logs = append(digest.logs, ChangesTrieRoot(*scr))
+	}
+	if !digestEqual(digest, block.header.digest) {
+		panic("Header digest items must match that calculated.")
+	}
 	return 0
 }
 

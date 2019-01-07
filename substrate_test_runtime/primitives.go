@@ -6,6 +6,10 @@ import (
 
 type H256 [32]byte
 
+func (h *H256) toHex() string {
+	return sprintBytes((*h)[:])
+}
+
 func (h *H256) ParityDecode(pd paritycodec.Decoder) {
 	pd.Read(h[:])
 }
