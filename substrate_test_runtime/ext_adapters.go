@@ -19,10 +19,6 @@ func print(s string) {
 	ext_print_utf8(&b[0], uint32(len(b)))
 }
 
-func printstring(s string) {
-	print(s)
-}
-
 // Debug printing of a byte array. ASCII characters are printed as is
 // TODO: bytes as decimal ints, hexadecimal
 
@@ -70,11 +66,9 @@ func resource_write(id int32, ptr *byte, length uintptr) uintptr {
 
 func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	lengths := make([]uint32, len(values))
-	print("for")
 	for i, v := range values {
 		lengths[i] = getLen([]byte(v))
 	}
-	print("joining")
 	joined := bytes.Join(values, []byte{})
 	var result [32]byte
 	resultPtr := &result[0]
@@ -83,14 +77,12 @@ func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	if len(lengths) > 0 {
 		ptrLengths = &lengths[0]
 	}
-	print("call ext")
 	ext_blake2_256_enumerated_trie_root(
 		getOffset([]byte(joined)),
 		ptrLengths,
 		uint32(len(lengths)),
 		resultPtr,
 	)
-	print("ext done")
 	return result
 }
 
@@ -115,10 +107,7 @@ func hashStorageKey(key []byte) []byte {
 func storageGet(key []byte) (bool, []byte) {
 	key = hashStorageKey(key)
 	var valueLen uint32
-	print("###############")
-	print(sprintBytes(key))
 	valuePtr := ext_get_allocated_storage(getOffset(key), getLen(key), &valueLen)
-	print(strconv.Itoa(int(valueLen)))
 	if valueLen == math.MaxUint32 {
 		return false, []byte{}
 	}
