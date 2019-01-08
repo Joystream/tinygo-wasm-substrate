@@ -15,7 +15,12 @@ targets.
 WebAssembly support in Go is quite limited and the resulting code is encumbered by the
 huge Go runtime).
 
-## How to run
+## How to run executor test module
+
+Executor test module is a very simple module that is used to test
+wasm-executor by exporting functions that test "ext_" imported functions.
+
+Original Rust source: https://github.com/paritytech/substrate/tree/master/core/executor/wasm
 
 (Instructions tested on Ubuntu Linux)
 
@@ -29,7 +34,7 @@ Use a patched Tinygo compiler:
 
 Build the module:
 
-    tinygo build -o wasmexecutortest.wasm --wasmi64enable wasmexecutortest.go
+    tinygo build --wasm-abi=generic -o wasmexecutortest.wasm wasmexecutortest.go
     export TEST_SUBSTRATE_MODULE_PATH=`readlink -f wasmexecutortest.wasm`
 
 Ensure you have Rust installed (see https://rustup.rs/)
@@ -46,5 +51,26 @@ Run the tests:
 
     cd core/executor
     cargo test wasm_executor
+
+All tests shall pass.
+
+## How to run test-runtime module
+
+Executor test module is a small runtime module that implements a simple
+transfer transaction.
+
+Original Rust source: https://github.com/paritytech/substrate/blob/master/core/test-runtime/src/system.rs
+
+All the instructions ar as per above, with the following changes:
+
+Build the module:
+
+    tinygo build -wasm-abi=generic -o str.wasm ./substrate_test_runtime/
+    export TEST_SUBSTRATE_RUNTIME_PATH=`readlink -f str.wasm`
+
+Run the tests:
+
+    cd core/executor
+    cargo test _wasm
 
 All tests shall pass.
