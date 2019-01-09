@@ -1,9 +1,14 @@
-package substratetestruntime
+package main
 
 import (
 	"bytes"
 	"strconv"
 
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/srio"
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/srprimitives"
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/srversion"
+	. "github.com/Joystream/tinygo-wasm-substrate/wasmhelpers"
 	paritycodec "github.com/kyegupov/parity-codec-go/noreflect"
 )
 
@@ -24,18 +29,24 @@ import (
 
 //go:export Core_version
 func coreVersion(_ *byte, _ uint32) uint64 {
-	return returnSlice(paritycodec.Encode(
-		RuntimeVersion{
+	return ReturnSlice(paritycodec.Encode(
+		srversion.RuntimeVersion{
 			"test",
 			"parity-test",
 			1,
 			1,
 			1,
-			[]ApiVersion{},
+			[]srversion.ApiVersion{},
 		}))
 }
 
-type AccountId H256
+type AuthorityId [32]byte
+
+func (t *AuthorityId) ParityDecode(pd paritycodec.Decoder) {
+	(*primitives.H256)(t).ParityDecode(pd)
+}
+
+type AccountId primitives.H256
 
 type Transfer struct {
 	from   AccountId
@@ -45,37 +56,37 @@ type Transfer struct {
 }
 
 func (t *Transfer) ParityDecode(pd paritycodec.Decoder) {
-	(*H256)(&t.from).ParityDecode(pd)
-	(*H256)(&t.to).ParityDecode(pd)
+	(*primitives.H256)(&t.from).ParityDecode(pd)
+	(*primitives.H256)(&t.to).ParityDecode(pd)
 	t.amount = pd.DecodeUint(8)
 	t.nonce = pd.DecodeUint(8)
 }
 
 func (t Transfer) ParityEncode(pe paritycodec.Encoder) {
-	(H256)(t.from).ParityEncode(pe)
-	(H256)(t.to).ParityEncode(pe)
+	(primitives.H256)(t.from).ParityEncode(pe)
+	(primitives.H256)(t.to).ParityEncode(pe)
 	pe.EncodeUint(t.amount, 8)
 	pe.EncodeUint(t.nonce, 8)
 }
 
 type Extrinsic struct {
 	transfer  Transfer
-	signature Ed25519Signature
+	signature srprimitives.Ed25519Signature
 }
 
 func (e *Extrinsic) ParityDecode(pd paritycodec.Decoder) {
 	e.transfer.ParityDecode(pd)
-	(*H512)(&e.signature).ParityDecode(pd)
+	(*primitives.H512)(&e.signature).ParityDecode(pd)
 }
 
 func (e Extrinsic) ParityEncode(pe paritycodec.Encoder) {
 	e.transfer.ParityEncode(pe)
-	(H512)(e.signature).ParityEncode(pe)
+	(primitives.H512)(e.signature).ParityEncode(pe)
 }
 
 type BlockNumber uint64
 
-type HashOutput H256 // BlakeTwo256::Output
+type HashOutput primitives.H256 // BlakeTwo256::Output
 
 type Header struct {
 	/// The parent hash.
@@ -87,14 +98,14 @@ type Header struct {
 	/// The merkle root of the extrinsics.
 	extrinsicsRoot HashOutput
 	/// A chain-specific digest of data useful for light clients or referencing auxiliary data.
-	digest Digest
+	digest srprimitives.Digest
 }
 
 func (h *Header) ParityDecode(pd paritycodec.Decoder) {
-	(*H256)(&h.parentHash).ParityDecode(pd)
+	(*primitives.H256)(&h.parentHash).ParityDecode(pd)
 	h.number = BlockNumber(pd.DecodeUintCompact())
-	(*H256)(&h.stateRoot).ParityDecode(pd)
-	(*H256)(&h.extrinsicsRoot).ParityDecode(pd)
+	(*primitives.H256)(&h.stateRoot).ParityDecode(pd)
+	(*primitives.H256)(&h.extrinsicsRoot).ParityDecode(pd)
 	(&h.digest).ParityDecode(pd)
 }
 
@@ -163,39 +174,39 @@ var BALANCE_OF = []byte("balance:")
 
 func executeTransactionBackend(utx Extrinsic) Result {
 	// check signature
-	utx.signature.Verify(paritycodec.Encode(utx.transfer), H256(utx.transfer.from))
+	utx.signature.Verify(paritycodec.Encode(utx.transfer), primitives.H256(utx.transfer.from))
 
 	// check nonce
-	nonce_key := concatByteSlices(NONCE_OF, paritycodec.Encode(H256(utx.transfer.from)))
-	expected_nonce := storageGetUint64Or(nonce_key, 0)
+	nonce_key := ConcatByteSlices(NONCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.from)))
+	expected_nonce := srio.StorageGetUint64Or(nonce_key, 0)
 	if utx.transfer.nonce != expected_nonce {
 		return Err(Stale)
 	}
 
 	// increment nonce in storage
-	storagePutUint64(nonce_key, expected_nonce+1)
+	srio.StoragePutUint64(nonce_key, expected_nonce+1)
 
 	// check sender balance
-	from_balance_key := concatByteSlices(BALANCE_OF, paritycodec.Encode(H256(utx.transfer.from)))
-	from_balance := storageGetUint64Or(from_balance_key, 0)
+	from_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.from)))
+	from_balance := srio.StorageGetUint64Or(from_balance_key, 0)
 
 	// enact transfer
 	if utx.transfer.amount > from_balance {
 		return Err(CantPay)
 	}
-	to_balance_key := concatByteSlices(BALANCE_OF, paritycodec.Encode(H256(utx.transfer.to)))
-	to_balance := storageGetUint64Or(to_balance_key, 0)
-	storagePutUint64(from_balance_key, from_balance-utx.transfer.amount)
-	storagePutUint64(to_balance_key, to_balance+utx.transfer.amount)
+	to_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.to)))
+	to_balance := srio.StorageGetUint64Or(to_balance_key, 0)
+	srio.StoragePutUint64(from_balance_key, from_balance-utx.transfer.amount)
+	srio.StoragePutUint64(to_balance_key, to_balance+utx.transfer.amount)
 	return Ok(Success)
 }
 
-func digestEqual(d1 Digest, d2 Digest) bool {
-	if len(d1.logs) != len(d2.logs) {
+func digestEqual(d1 srprimitives.Digest, d2 srprimitives.Digest) bool {
+	if len(d1.Logs) != len(d2.Logs) {
 		return false
 	}
-	for i := range d1.logs {
-		if d1.logs[i] != d2.logs[i] {
+	for i := range d1.Logs {
+		if d1.Logs[i] != d2.Logs[i] {
 			return false
 		}
 	}
@@ -215,7 +226,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 		txs[i] = paritycodec.Encode(e)
 	}
 
-	txsRoot := enumeratedTrieRootBlake256ForByteSlices(txs)
+	txsRoot := srio.EnumeratedTrieRootBlake256ForByteSlices(txs)
 	if txsRoot != block.header.extrinsicsRoot {
 		panic("Transaction trie root must be valid.")
 	}
@@ -224,28 +235,28 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	for i, e := range block.extrinsics {
 		var buffer = bytes.Buffer{}
 		paritycodec.Encoder{&buffer}.EncodeUint(uint64(i), 4)
-		storagePut(EXTRINSIC_INDEX, buffer.Bytes())
+		srio.StoragePut(EXTRINSIC_INDEX, buffer.Bytes())
 		res := executeTransactionBackend(e)
-		storageKill(EXTRINSIC_INDEX)
+		srio.StorageKill(EXTRINSIC_INDEX)
 		if res.isError {
 			panic("Extrinsic error " + strconv.Itoa(int(res.okOrErrorCode)))
 		}
 	}
 
-	sr := storageRoot()
-	if *sr != H256(block.header.stateRoot) {
+	sr := srio.StorageRoot()
+	if *sr != primitives.H256(block.header.stateRoot) {
 		panic("Storage root must match that calculated.")
 	}
 
 	// check digest
-	digest := Digest{[]DigestItem{}}
-	if len(digest.logs) > 0 {
+	digest := srprimitives.Digest{[]srprimitives.DigestItem{}, func() srprimitives.AuthorityId { return &AuthorityId{} }}
+	if len(digest.Logs) > 0 {
 		panic("whoa")
 	}
 	phb := block.header.parentHash[:]
-	ok, scr := storageChangesRoot(phb, uint64(block.header.number)-1)
+	ok, scr := srio.StorageChangesRoot(phb, uint64(block.header.number)-1)
 	if ok {
-		digest.logs = append(digest.logs, ChangesTrieRoot(*scr))
+		digest.Logs = append(digest.Logs, srprimitives.ChangesTrieRoot(*scr))
 	}
 	if !digestEqual(digest, block.header.digest) {
 		panic("Header digest items must match that calculated.")

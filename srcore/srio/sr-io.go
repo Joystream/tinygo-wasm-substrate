@@ -1,4 +1,4 @@
-package substratetestruntime
+package srio
 
 import (
 	"bytes"
@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
+	. "github.com/Joystream/tinygo-wasm-substrate/wasmhelpers"
 )
 
 // Adapters for external functions, provided by the host
@@ -14,7 +17,7 @@ import (
 
 // Debug output
 
-func print(s string) {
+func Print(s string) {
 	b := []byte(s)
 	ext_print_utf8(&b[0], uint32(len(b)))
 }
@@ -22,7 +25,7 @@ func print(s string) {
 // Debug printing of a byte array. ASCII characters are printed as is
 // TODO: bytes as decimal ints, hexadecimal
 
-func sprintBytes(bs []byte) string {
+func SprintBytes(bs []byte) string {
 	s1 := []string{}
 	for _, b := range bs {
 		if b >= 32 && b < 128 {
@@ -53,7 +56,7 @@ func resource_write(id int32, ptr *byte, length uintptr) uintptr {
 		ptr2 := uintptr(unsafe.Pointer(ptr)) + i
 		c := *(*byte)(unsafe.Pointer(ptr2))
 		if c == 10 {
-			ext_print_utf8(getOffset(printBuffer), getLen(printBuffer))
+			ext_print_utf8(GetOffset(printBuffer), GetLen(printBuffer))
 			printBuffer = printBuffer[:0]
 		} else if c == 13 {
 			// ignore
@@ -64,10 +67,10 @@ func resource_write(id int32, ptr *byte, length uintptr) uintptr {
 	return length
 }
 
-func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
+func EnumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	lengths := make([]uint32, len(values))
 	for i, v := range values {
-		lengths[i] = getLen([]byte(v))
+		lengths[i] = GetLen([]byte(v))
 	}
 	joined := bytes.Join(values, []byte{})
 	var result [32]byte
@@ -78,7 +81,7 @@ func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 		ptrLengths = &lengths[0]
 	}
 	ext_blake2_256_enumerated_trie_root(
-		getOffset([]byte(joined)),
+		GetOffset([]byte(joined)),
 		ptrLengths,
 		uint32(len(lengths)),
 		resultPtr,
@@ -86,55 +89,55 @@ func enumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	return result
 }
 
-func storagePut(key []byte, value []byte) {
+func StoragePut(key []byte, value []byte) {
 	key = hashStorageKey(key)
-	ext_set_storage(getOffset(key), getLen(key), getOffset(value), getLen(value))
+	ext_set_storage(GetOffset(key), GetLen(key), GetOffset(value), GetLen(value))
 }
 
-func storagePutUint64(key []byte, value uint64) {
+func StoragePutUint64(key []byte, value uint64) {
 	buf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buf, value)
-	storagePut(key, buf)
+	StoragePut(key, buf)
 }
 
 func hashStorageKey(key []byte) []byte {
 	result := make([]byte, 16)
-	resultPtr := getOffset(result)
-	ext_twox_128(getOffset(key), getLen(key), resultPtr)
+	resultPtr := GetOffset(result)
+	ext_twox_128(GetOffset(key), GetLen(key), resultPtr)
 	return result
 }
 
-func storageGet(key []byte) (bool, []byte) {
+func StorageGet(key []byte) (bool, []byte) {
 	key = hashStorageKey(key)
 	var valueLen uint32
-	valuePtr := ext_get_allocated_storage(getOffset(key), getLen(key), &valueLen)
+	valuePtr := ext_get_allocated_storage(GetOffset(key), GetLen(key), &valueLen)
 	if valueLen == math.MaxUint32 {
 		return false, []byte{}
 	}
-	return true, slice(valuePtr, valueLen)
+	return true, Slice(valuePtr, valueLen)
 }
 
-func storageGetUint64Or(key []byte, deflt uint64) uint64 {
-	ok, buf := storageGet(key)
+func StorageGetUint64Or(key []byte, deflt uint64) uint64 {
+	ok, buf := StorageGet(key)
 	if ok {
 		return binary.LittleEndian.Uint64(buf)
 	}
 	return deflt
 }
 
-func storageKill(key []byte) {
+func StorageKill(key []byte) {
 	key = hashStorageKey(key)
-	ext_clear_storage(getOffset(key), getLen(key))
+	ext_clear_storage(GetOffset(key), GetLen(key))
 }
 
-func storageRoot() *H256 {
-	var res H256
+func StorageRoot() *primitives.H256 {
+	var res primitives.H256
 	ext_storage_root(&res)
 	return &res
 }
 
-func storageChangesRoot(parentHash []byte, parentNum uint64) (bool, *H256) {
-	var res H256
-	ok := ext_storage_changes_root(getOffset(parentHash), getLen(parentHash), parentNum, &res) > 0
+func StorageChangesRoot(parentHash []byte, parentNum uint64) (bool, *primitives.H256) {
+	var res primitives.H256
+	ok := ext_storage_changes_root(GetOffset(parentHash), GetLen(parentHash), parentNum, &res) > 0
 	return ok, &res
 }

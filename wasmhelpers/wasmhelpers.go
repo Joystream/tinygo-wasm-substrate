@@ -1,4 +1,4 @@
-package substratetestruntime
+package wasmhelpers
 
 import (
 	"io"
@@ -9,27 +9,27 @@ import (
 // Helper functions to translate between Go functions / structures
 // and WebAssembly / Substrate calling conventions
 
-func getOffset(b []byte) *byte {
+func GetOffset(b []byte) *byte {
 	if len(b) == 0 {
 		return nil
 	}
 	return &b[0]
 }
 
-func getLen(b []byte) uint32 {
+func GetLen(b []byte) uint32 {
 	return uint32(len(b))
 }
 
-func packedSlice(offset *byte, len uint32) uint64 {
+func PackedSlice(offset *byte, len uint32) uint64 {
 	return uint64(len)<<32 + uint64(uintptr(unsafe.Pointer(offset)))
 }
 
-func returnSlice(b []byte) uint64 {
+func ReturnSlice(b []byte) uint64 {
 	len := uint32(len(b))
 	if len == 0 {
 		return 0
 	}
-	return packedSlice(getOffset(b), len)
+	return PackedSlice(GetOffset(b), len)
 }
 
 // TODO: unsafe convertor asbytes(string)
@@ -55,14 +55,14 @@ func (r *MemReader) Read(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func slice(offset *byte, length uint32) []byte {
+func Slice(offset *byte, length uint32) []byte {
 	arrayZeroPtr := (*[math.MaxInt32]byte)(unsafe.Pointer(uintptr(0)))
 	uo := uintptr(unsafe.Pointer(offset))
 	ul := uintptr(length)
 	return (*arrayZeroPtr)[uo : uo+ul]
 }
 
-func concatByteSlices(a []byte, b []byte) []byte {
+func ConcatByteSlices(a []byte, b []byte) []byte {
 	r := make([]byte, len(a)+len(b))
 	copy(r[:len(a)], a)
 	copy(r[len(a):], b)
