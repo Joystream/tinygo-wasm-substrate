@@ -8,6 +8,7 @@ import (
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srio"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srprimitives"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srversion"
+	"github.com/Joystream/tinygo-wasm-substrate/srml/support/storage"
 	. "github.com/Joystream/tinygo-wasm-substrate/wasmhelpers"
 	paritycodec "github.com/kyegupov/parity-codec-go/noreflect"
 )
@@ -21,7 +22,7 @@ import (
 // (export "TaggedTransactionQueue_validate_transaction" (func $TaggedTransactionQueue_validate_transaction))
 // (export "BlockBuilder_apply_extrinsic" (func $BlockBuilder_apply_extrinsic))
 // (export "BlockBuilder_finalise_block" (func $BlockBuilder_finalise_block))
-// (export "BlockBuilder_inherent_extrinsics" (func $BlockBuilder_inherent_extrinsics))
+// (export "BlockBuilder_inherent_extrinsics" (func $BlockBuilder_inherent_extrinsics))Storage
 // (export "BlockBuilder_check_inherents" (func $BlockBuilder_check_inherents))
 // (export "BlockBuilder_random_seed" (func $BlockBuilder_random_seed))
 // (export "TestAPI_balance_of" (func $TestAPI_balance_of))
@@ -178,26 +179,26 @@ func executeTransactionBackend(utx Extrinsic) Result {
 
 	// check nonce
 	nonce_key := ConcatByteSlices(NONCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.from)))
-	expected_nonce := srio.StorageGetUint64Or(nonce_key, 0)
+	expected_nonce := storage.GetUint64Or(nonce_key, 0)
 	if utx.transfer.nonce != expected_nonce {
 		return Err(Stale)
 	}
 
 	// increment nonce in storage
-	srio.StoragePutUint64(nonce_key, expected_nonce+1)
+	storage.PutUint64(nonce_key, expected_nonce+1)
 
 	// check sender balance
 	from_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.from)))
-	from_balance := srio.StorageGetUint64Or(from_balance_key, 0)
+	from_balance := storage.GetUint64Or(from_balance_key, 0)
 
 	// enact transfer
 	if utx.transfer.amount > from_balance {
 		return Err(CantPay)
 	}
 	to_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.to)))
-	to_balance := srio.StorageGetUint64Or(to_balance_key, 0)
-	srio.StoragePutUint64(from_balance_key, from_balance-utx.transfer.amount)
-	srio.StoragePutUint64(to_balance_key, to_balance+utx.transfer.amount)
+	to_balance := storage.GetUint64Or(to_balance_key, 0)
+	storage.PutUint64(from_balance_key, from_balance-utx.transfer.amount)
+	storage.PutUint64(to_balance_key, to_balance+utx.transfer.amount)
 	return Ok(Success)
 }
 
@@ -235,9 +236,9 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	for i, e := range block.extrinsics {
 		var buffer = bytes.Buffer{}
 		paritycodec.Encoder{&buffer}.EncodeUint(uint64(i), 4)
-		srio.StoragePut(EXTRINSIC_INDEX, buffer.Bytes())
+		storage.Put(EXTRINSIC_INDEX, buffer.Bytes())
 		res := executeTransactionBackend(e)
-		srio.StorageKill(EXTRINSIC_INDEX)
+		storage.Kill(EXTRINSIC_INDEX)
 		if res.isError {
 			panic("Extrinsic error " + strconv.Itoa(int(res.okOrErrorCode)))
 		}
@@ -245,7 +246,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 
 	sr := srio.StorageRoot()
 	if *sr != primitives.H256(block.header.stateRoot) {
-		panic("Storage root must match that calculated.")
+		panic("storage. root must match that calculated.")
 	}
 
 	// check digest

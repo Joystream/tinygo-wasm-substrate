@@ -2,7 +2,6 @@ package srio
 
 import (
 	"bytes"
-	"encoding/binary"
 	"math"
 	"strconv"
 	"strings"
@@ -90,25 +89,10 @@ func EnumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 }
 
 func StoragePut(key []byte, value []byte) {
-	key = hashStorageKey(key)
 	ext_set_storage(GetOffset(key), GetLen(key), GetOffset(value), GetLen(value))
 }
 
-func StoragePutUint64(key []byte, value uint64) {
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, value)
-	StoragePut(key, buf)
-}
-
-func hashStorageKey(key []byte) []byte {
-	result := make([]byte, 16)
-	resultPtr := GetOffset(result)
-	ext_twox_128(GetOffset(key), GetLen(key), resultPtr)
-	return result
-}
-
 func StorageGet(key []byte) (bool, []byte) {
-	key = hashStorageKey(key)
 	var valueLen uint32
 	valuePtr := ext_get_allocated_storage(GetOffset(key), GetLen(key), &valueLen)
 	if valueLen == math.MaxUint32 {
@@ -117,16 +101,7 @@ func StorageGet(key []byte) (bool, []byte) {
 	return true, Slice(valuePtr, valueLen)
 }
 
-func StorageGetUint64Or(key []byte, deflt uint64) uint64 {
-	ok, buf := StorageGet(key)
-	if ok {
-		return binary.LittleEndian.Uint64(buf)
-	}
-	return deflt
-}
-
 func StorageKill(key []byte) {
-	key = hashStorageKey(key)
 	ext_clear_storage(GetOffset(key), GetLen(key))
 }
 
@@ -140,4 +115,22 @@ func StorageChangesRoot(parentHash []byte, parentNum uint64) (bool, *primitives.
 	var res primitives.H256
 	ok := ext_storage_changes_root(GetOffset(parentHash), GetLen(parentHash), parentNum, &res) > 0
 	return ok, &res
+}
+
+func Twox128(v []byte) []byte {
+	var res [16]byte
+	ext_twox_128(GetOffset(v), GetLen(v), &res[0])
+	return res[:]
+}
+
+func Twox256(v []byte) []byte {
+	var res [32]byte
+	ext_twox_256(GetOffset(v), GetLen(v), &res[0])
+	return res[:]
+}
+
+func Blake256(v []byte) []byte {
+	var res [32]byte
+	ext_blake2_256(GetOffset(v), GetLen(v), &res[0])
+	return res[:]
 }

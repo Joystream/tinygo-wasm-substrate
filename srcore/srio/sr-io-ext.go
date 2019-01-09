@@ -9,6 +9,8 @@ import "github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
 // The code assumes that *byte == uintptr == uint32, which is respected
 // by Tinygo compiler, as of early 2019
 
+// TODO: all these should be unexported, export only high-level wrappers
+
 //go:export ext_clear_prefix
 func ext_clear_prefix(prefix_data *byte, prefix_len uint32)
 
@@ -44,3 +46,6 @@ func ext_storage_root(resultPtr *primitives.H256)
 
 //go:export ext_storage_changes_root
 func ext_storage_changes_root(parent_hash_data *byte, parent_hash_len uint32, parent_num uint64, result *primitives.H256) uint32
+
+//go:export ext_clear_prefix
+func Ext_clear_prefix(prefix_data *byte, prefix_len uint32)
