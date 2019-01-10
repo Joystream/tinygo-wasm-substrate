@@ -18,7 +18,7 @@ import (
 
 func Print(s string) {
 	b := []byte(s)
-	ext_print_utf8(&b[0], uint32(len(b)))
+	ext_print_utf8(&b[0], uintptr(len(b)))
 }
 
 // Debug printing of a byte array. ASCII characters are printed as is
@@ -67,7 +67,7 @@ func resource_write(id int32, ptr *byte, length uintptr) uintptr {
 }
 
 func EnumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
-	lengths := make([]uint32, len(values))
+	lengths := make([]uintptr, len(values))
 	for i, v := range values {
 		lengths[i] = GetLen([]byte(v))
 	}
@@ -75,14 +75,14 @@ func EnumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	var result [32]byte
 	resultPtr := &result[0]
 
-	ptrLengths := (*uint32)(nil)
+	ptrLengths := (*uintptr)(nil)
 	if len(lengths) > 0 {
 		ptrLengths = &lengths[0]
 	}
 	ext_blake2_256_enumerated_trie_root(
 		GetOffset([]byte(joined)),
 		ptrLengths,
-		uint32(len(lengths)),
+		uintptr(len(lengths)),
 		resultPtr,
 	)
 	return result
@@ -93,7 +93,7 @@ func StoragePut(key []byte, value []byte) {
 }
 
 func StorageGet(key []byte) (bool, []byte) {
-	var valueLen uint32
+	var valueLen uintptr
 	valuePtr := ext_get_allocated_storage(GetOffset(key), GetLen(key), &valueLen)
 	if valueLen == math.MaxUint32 {
 		return false, []byte{}

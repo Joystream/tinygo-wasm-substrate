@@ -34,7 +34,7 @@ Use a patched Tinygo compiler:
 
 Build the module:
 
-    tinygo build --wasm-abi=generic -o wasmexecutortest.wasm ./executortestmodule
+    tinygo build -wasm-abi=generic -ldflags="--export-table" -o wasmexecutortest.wasm ./executortestmodule
     export TEST_SUBSTRATE_MODULE_PATH=`readlink -f wasmexecutortest.wasm`
 
 Ensure you have Rust installed (see https://rustup.rs/)
@@ -53,6 +53,10 @@ Run the tests:
     cargo test wasm_executor
 
 All tests shall pass.
+
+    cargo test sandbox
+
+(Note: sandbox tests are still a work in progress).
 
 ## How to run test-runtime module
 

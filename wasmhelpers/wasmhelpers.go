@@ -16,16 +16,16 @@ func GetOffset(b []byte) *byte {
 	return &b[0]
 }
 
-func GetLen(b []byte) uint32 {
-	return uint32(len(b))
+func GetLen(b []byte) uintptr {
+	return uintptr(len(b))
 }
 
-func PackedSlice(offset *byte, len uint32) uint64 {
+func PackedSlice(offset *byte, len uintptr) uint64 {
 	return uint64(len)<<32 + uint64(uintptr(unsafe.Pointer(offset)))
 }
 
 func ReturnSlice(b []byte) uint64 {
-	len := uint32(len(b))
+	len := uintptr(len(b))
 	if len == 0 {
 		return 0
 	}
@@ -55,7 +55,7 @@ func (r *MemReader) Read(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func Slice(offset *byte, length uint32) []byte {
+func Slice(offset *byte, length uintptr) []byte {
 	arrayZeroPtr := (*[math.MaxInt32]byte)(unsafe.Pointer(uintptr(0)))
 	uo := uintptr(unsafe.Pointer(offset))
 	ul := uintptr(length)

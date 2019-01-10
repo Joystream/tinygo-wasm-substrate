@@ -8,7 +8,7 @@ import (
 )
 
 //go:export test_data_in
-func test_data_in(offset *byte, len uint32) uint64 {
+func test_data_in(offset *byte, len uintptr) uint64 {
 	print("set_storage")
 
 	key := []byte("input")
@@ -30,13 +30,13 @@ func test_data_in(offset *byte, len uint32) uint64 {
 }
 
 //go:export test_clear_prefix
-func test_clear_prefix(offset *byte, len uint32) uint64 {
+func test_clear_prefix(offset *byte, len uintptr) uint64 {
 	srio.Ext_clear_prefix(offset, len)
 	return ReturnSlice([]byte("all ok!"))
 }
 
 //go:export test_empty_return
-func test_empty_return(_ *byte, _ uint32) uint64 {
+func test_empty_return(_ *byte, _ uintptr) uint64 {
 	return ReturnSlice([]byte{})
 }
 
@@ -47,7 +47,7 @@ func test_panic() uint64 {
 }
 
 //go:export test_conditional_panic
-func test_conditional_panic(offset *byte, len uint32) uint64 {
+func test_conditional_panic(offset *byte, len uintptr) uint64 {
 	if len > 0 {
 		panic("test panic")
 	}
@@ -55,22 +55,22 @@ func test_conditional_panic(offset *byte, len uint32) uint64 {
 }
 
 //go:export test_blake2_256
-func test_blake2_256(offset *byte, len uint32) uint64 {
+func test_blake2_256(offset *byte, len uintptr) uint64 {
 	return ReturnSlice(srio.Blake256(Slice(offset, len)))
 }
 
 //go:export test_twox_256
-func test_twox_256(offset *byte, len uint32) uint64 {
+func test_twox_256(offset *byte, len uintptr) uint64 {
 	return ReturnSlice(srio.Twox256(Slice(offset, len)))
 }
 
 //go:export test_twox_128
-func test_twox_128(offset *byte, len uint32) uint64 {
+func test_twox_128(offset *byte, len uintptr) uint64 {
 	return ReturnSlice(srio.Twox128(Slice(offset, len)))
 }
 
 //go:export test_ed25519_verify
-func test_ed25519_verify(offset *byte, len uint32) uint64 {
+func test_ed25519_verify(offset *byte, len uintptr) uint64 {
 	pubkeyPtr := offset
 	sigPtr := (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(offset)) + 32))
 	msg := []byte("all ok!")
@@ -79,7 +79,7 @@ func test_ed25519_verify(offset *byte, len uint32) uint64 {
 }
 
 //go:export test_enumerated_trie_root
-func test_enumerated_trie_root(_ *byte, _ uint32) uint64 {
+func test_enumerated_trie_root(_ *byte, _ uintptr) uint64 {
 	values := [][]byte{
 		[]byte("zero"),
 		[]byte("one"),
