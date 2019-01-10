@@ -56,7 +56,7 @@ func GenerateRuntimeApiId(name string) ApiID {
 func (v RuntimeVersion) ParityEncode(pe paritycodec.Encoder) {
 	pe.EncodeString(v.SpecName)
 	pe.EncodeString(v.ImplName)
-	pe.EncodeUint(uint64(v.AuthoringVersion), 4)
-	pe.EncodeUint(uint64(v.SpecVersion), 4)
-	pe.EncodeUint(uint64(v.ImplVersion), 4)
+	pe.EncodeUint32(v.AuthoringVersion)
+	pe.EncodeUint32(v.SpecVersion)
+	pe.EncodeUint32(v.ImplVersion)
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"strconv"
 
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
@@ -30,7 +29,7 @@ import (
 
 //go:export Core_version
 func coreVersion(_ *byte, _ uint32) uint64 {
-	return ReturnSlice(paritycodec.Encode(
+	return ReturnSlice(paritycodec.ToBytes(
 		srversion.RuntimeVersion{
 			"test",
 			"parity-test",
@@ -49,6 +48,10 @@ func (t *AuthorityId) ParityDecode(pd paritycodec.Decoder) {
 
 type AccountId primitives.H256
 
+func (t AccountId) ParityEncode(pe paritycodec.Encoder) {
+	(primitives.H256)(t).ParityEncode(pe)
+}
+
 type Transfer struct {
 	from   AccountId
 	to     AccountId
@@ -59,15 +62,15 @@ type Transfer struct {
 func (t *Transfer) ParityDecode(pd paritycodec.Decoder) {
 	(*primitives.H256)(&t.from).ParityDecode(pd)
 	(*primitives.H256)(&t.to).ParityDecode(pd)
-	t.amount = pd.DecodeUint(8)
-	t.nonce = pd.DecodeUint(8)
+	t.amount = pd.DecodeUint64()
+	t.nonce = pd.DecodeUint64()
 }
 
 func (t Transfer) ParityEncode(pe paritycodec.Encoder) {
 	(primitives.H256)(t.from).ParityEncode(pe)
 	(primitives.H256)(t.to).ParityEncode(pe)
-	pe.EncodeUint(t.amount, 8)
-	pe.EncodeUint(t.nonce, 8)
+	pe.EncodeUint64(t.amount)
+	pe.EncodeUint64(t.nonce)
 }
 
 type Extrinsic struct {
@@ -175,10 +178,10 @@ var BALANCE_OF = []byte("balance:")
 
 func executeTransactionBackend(utx Extrinsic) Result {
 	// check signature
-	utx.signature.Verify(paritycodec.Encode(utx.transfer), primitives.H256(utx.transfer.from))
+	utx.signature.Verify(paritycodec.ToBytes(utx.transfer), primitives.H256(utx.transfer.from))
 
 	// check nonce
-	nonce_key := ConcatByteSlices(NONCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.from)))
+	nonce_key := ConcatByteSlices(NONCE_OF, paritycodec.ToBytes(utx.transfer.from))
 	expected_nonce := storage.GetUint64Or(nonce_key, 0)
 	if utx.transfer.nonce != expected_nonce {
 		return Err(Stale)
@@ -188,14 +191,14 @@ func executeTransactionBackend(utx Extrinsic) Result {
 	storage.PutUint64(nonce_key, expected_nonce+1)
 
 	// check sender balance
-	from_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.from)))
+	from_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.ToBytes(utx.transfer.from))
 	from_balance := storage.GetUint64Or(from_balance_key, 0)
 
 	// enact transfer
 	if utx.transfer.amount > from_balance {
 		return Err(CantPay)
 	}
-	to_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.Encode(primitives.H256(utx.transfer.to)))
+	to_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.ToBytes(utx.transfer.to))
 	to_balance := storage.GetUint64Or(to_balance_key, 0)
 	storage.PutUint64(from_balance_key, from_balance-utx.transfer.amount)
 	storage.PutUint64(to_balance_key, to_balance+utx.transfer.amount)
@@ -224,7 +227,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	// check transaction trie root represents the transactions.
 	txs := make([][]byte, len(block.extrinsics))
 	for i, e := range block.extrinsics {
-		txs[i] = paritycodec.Encode(e)
+		txs[i] = paritycodec.ToBytes(e)
 	}
 
 	txsRoot := srio.EnumeratedTrieRootBlake256ForByteSlices(txs)
@@ -234,9 +237,8 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 
 	// execute transactions
 	for i, e := range block.extrinsics {
-		var buffer = bytes.Buffer{}
-		paritycodec.Encoder{&buffer}.EncodeUint(uint64(i), 4)
-		storage.Put(EXTRINSIC_INDEX, buffer.Bytes())
+		storage.Put(EXTRINSIC_INDEX,
+			paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { pe.EncodeInt32(int32(i)) }))
 		res := executeTransactionBackend(e)
 		storage.Kill(EXTRINSIC_INDEX)
 		if res.isError {

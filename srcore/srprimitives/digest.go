@@ -37,7 +37,7 @@ type DigestItem interface {
 }
 
 func DecodeDigestItem(pd paritycodec.Decoder, aidFactory func() AuthorityId) DigestItem {
-	t := DigestItemType(pd.ReadOneByte())
+	t := DigestItemType(pd.DecodeByte())
 	switch t {
 	case DtOther:
 		return OtherDigestItem(pd.DecodeByteSlice())
@@ -87,7 +87,7 @@ type Seal struct {
 }
 
 func (s *Seal) ParityDecode(pd paritycodec.Decoder) {
-	s.number = pd.DecodeUint(8)
+	s.number = pd.DecodeUint64()
 	(*primitives.H512)(&s.signature).ParityDecode(pd)
 }
 
