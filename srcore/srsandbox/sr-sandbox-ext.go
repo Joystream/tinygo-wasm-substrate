@@ -21,7 +21,7 @@ func ext_sandbox_invoke(
 	args_len uintptr,
 	return_val_ptr *byte,
 	return_val_len uintptr,
-	state uintptr,
+	state unsafe.Pointer,
 ) uint32
 
 //go:export ext_sandbox_memory_new

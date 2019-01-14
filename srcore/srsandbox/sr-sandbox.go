@@ -1,7 +1,9 @@
 package srsandbox
 
 import (
+	"bytes"
 	"math"
+	"strconv"
 	"unsafe"
 
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
@@ -9,7 +11,7 @@ import (
 	paritycodec "github.com/kyegupov/parity-codec-go/noreflect"
 )
 
-type Func func(state unsafe.Pointer, args primitives.TypedValues) (primitives.ReturnValue, *primitives.HostError)
+type Func func(state unsafe.Pointer, args primitives.TypedValues) primitives.ReturnValueOrHostError
 
 type TinyGoClosure struct {
 	// See https://github.com/aykevl/tinygo/blob/107fccb288f8ba6258d417c5e14921d4d97f3e64/compiler/compiler.go#L536
@@ -35,29 +37,44 @@ func DispatchThunk(
 	funcObj := *(*Func)(unsafe.Pointer(&closure))
 
 	// Pass control flow to the designated function.
-	result, err := funcObj(unsafe.Pointer(state), args)
+	resultOrErr := funcObj(unsafe.Pointer(state), args)
 
 	// TODO: dealloc result
 
 	return wasmhelpers.ReturnSlice(paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) {
-		if err != nil {
-			pe.EncodeByte(1)
-			// TODO: encode hosterror??
-		} else {
-			pe.EncodeByte(0)
-			result.ParityEncode(pe)
-		}
+		resultOrErr.ReturnValueEncode(pe)
 	}))
+}
+
+func NewMemory(pages uint32, maxPages uint32) (primitives.ExternMemory, Error) {
+	result := ext_sandbox_memory_new(pages, maxPages)
+	switch result {
+	case ERR_MODULE:
+		return primitives.ExternMemory{}, ErrModule
+	}
+	return primitives.ExternMemory{result}, NoError
 }
 
 type Instance struct {
 	instance_idx       uint32
-	_retained_memories []primitives.Memory
+	_retained_memories []primitives.ExternMemory
 }
 
 type EnvironmentDefinitionBuilder struct {
 	env_def           primitives.EnvironmentDefinition
-	retained_memories []primitives.Memory
+	retained_memories []primitives.ExternMemory
+}
+
+func (e EnvironmentDefinitionBuilder) AddHostFunc(module string, name string, function Func) {
+	funcClosure := *(*TinyGoClosure)(unsafe.Pointer(&function))
+
+	e.env_def.Entries = append(e.env_def.Entries,
+		primitives.Entry{module, name, primitives.ExternFunction{uint32(funcClosure.wasmTableIndex)}})
+}
+
+func (e EnvironmentDefinitionBuilder) AddMemory(module string, name string, memory primitives.ExternMemory) {
+	e.env_def.Entries = append(e.env_def.Entries,
+		primitives.Entry{module, name, memory})
 }
 
 type Error int
@@ -77,6 +94,11 @@ const (
 	/// Failed to invoke an exported function for some reason.
 	ErrExecution
 )
+
+/// No error happened.
+///
+/// For FFI purposes.
+const ERR_OK uint32 = 0
 
 /// Validation or instantiation error occured when creating new
 /// sandboxed module instance.
@@ -124,58 +146,35 @@ func NewInstance(code []byte, env_def_builder EnvironmentDefinitionBuilder, stat
 	return Instance{instanceIdx, retainedMemories}, NoError
 }
 
-// 	pub fn invoke(
-// 		&mut self,
-// 		name: &[u8],
-// 		args: &[TypedValue],
-// 		state: &mut T,
-// 	) -> Result<ReturnValue, Error> {
-// 		serialized_args = args.to_vec().encode();
-// 		mut return_val = vec![0u8; sandbox_primitives::ReturnValue::ENCODED_MAX_SIZE];
+// TODO: return proper error type
+func (i Instance) Invoke(
+	name string,
+	args primitives.TypedValues,
+	state unsafe.Pointer,
+) primitives.ReturnValueOrHostError {
 
-// 		result = unsafe {
-// 			ffi::ext_sandbox_invoke(
-// 				self.instance_idx,
-// 				name.as_ptr(),
-// 				name.len(),
-// 				serialized_args.as_ptr(),
-// 			pub fn invoke(
-// 		&mut self,
-// 		name: &[u8],
-// 		args: &[TypedValue],
-// 		state: &mut T,
-// 	) -> Result<ReturnValue, Error> {
-// 		serialized_args = args.to_vec().encode();
-// 		mut return_val = vec![0u8; sandbox_primitives::ReturnValue::ENCODED_MAX_SIZE];
+	serializedArgs := paritycodec.ToBytes(args)
+	returnValBuf := make([]byte, primitives.ENCODED_MAX_SIZE_RETURN_VALUE_OR_ERROR)
+	nameBytes := ([]byte)(name)
+	result := ext_sandbox_invoke(
+		i.instance_idx,
+		wasmhelpers.GetOffset(nameBytes), wasmhelpers.GetLen(nameBytes),
+		wasmhelpers.GetOffset(serializedArgs), wasmhelpers.GetLen(serializedArgs),
+		wasmhelpers.GetOffset(returnValBuf), wasmhelpers.GetLen(returnValBuf),
+		state,
+	)
 
-// 		result = unsafe {
-// 			ffi::ext_sandbox_invoke(
-// 				self.instance_idx,
-// 				name.as_ptr(),
-// 				name.len(),
-// 				serialized_args.as_ptr(),
-// 				serialized_args.len(),
-// 				return_val.as_mut_ptr(),
-// 				return_val.len(),
-// 				state as *const T as usize,
-// 			)
-// 		};
-// 		match result {
-// 			sandbox_primitives::ERR_OK => {
-// 				return_val = sandbox_primitives::ReturnValue::decode(&mut &return_val[..])
-// 					.ok_or(Error::Execution)?;
-// 				Ok(return_val)
-// 			}
-// 			sandbox_primitives::ERR_EXECUTION => Err(Error::Execution),
-// 			_ => unreachable!(),
-// 		}
-// 	}
-// }		serialized_args.len(),
-// 				return_val.as_mut_ptr(),
-// 				return_val.len(),
-// 				state as *const T as usize,
-// 			)
-// 		};
+	switch result {
+	case ERR_OK:
+		pd := paritycodec.Decoder{bytes.NewBuffer(returnValBuf)}
+		return primitives.ReturnValueDecode(pd)
+	case ERR_EXECUTION:
+		return primitives.HostError{}
+	default:
+		panic("Invalid ext_sandbox_invoke result: " + strconv.Itoa(int(result)))
+	}
+}
+
 // 		match result {
 // 			sandbox_primitives::ERR_OK => {
 // 				return_val = sandbox_primitives::ReturnValue::decode(&mut &return_val[..])

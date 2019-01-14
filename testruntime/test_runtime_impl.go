@@ -73,19 +73,49 @@ func (t Transfer) ParityEncode(pe paritycodec.Encoder) {
 	pe.EncodeUint64(t.nonce)
 }
 
-type Extrinsic struct {
+type Extrinsic interface {
+	ExtrinsicVariant() (byte, paritycodec.Encodeable)
+}
+
+func EncodeExtrinsic(ex Extrinsic, pe paritycodec.Encoder) {
+	b, v := ex.ExtrinsicVariant()
+	pe.EncodeByte(b)
+	v.ParityEncode(pe)
+}
+
+func DecodeExtrinsic(pd paritycodec.Decoder) Extrinsic {
+	b := pd.DecodeByte()
+	switch b {
+	case 0:
+		panic("unsupported extrinsic: AuthoritiesChange")
+	case 1:
+		var r TransferExtrinsic
+		r.ParityDecode(pd)
+		return r
+	default:
+		panic("unsupported extrinsic type " + strconv.Itoa(int(b)))
+	}
+}
+
+type AuthoritiesChange []AuthorityId
+
+type TransferExtrinsic struct {
 	transfer  Transfer
 	signature srprimitives.Ed25519Signature
 }
 
-func (e *Extrinsic) ParityDecode(pd paritycodec.Decoder) {
+func (e *TransferExtrinsic) ParityDecode(pd paritycodec.Decoder) {
 	e.transfer.ParityDecode(pd)
 	(*primitives.H512)(&e.signature).ParityDecode(pd)
 }
 
-func (e Extrinsic) ParityEncode(pe paritycodec.Encoder) {
+func (e TransferExtrinsic) ParityEncode(pe paritycodec.Encoder) {
 	e.transfer.ParityEncode(pe)
 	(primitives.H512)(e.signature).ParityEncode(pe)
+}
+
+func (e TransferExtrinsic) ExtrinsicVariant() (byte, paritycodec.Encodeable) {
+	return 1, e
 }
 
 type BlockNumber uint64
@@ -118,14 +148,14 @@ type Extrinsics []Extrinsic
 func (e *Extrinsics) ParityDecode(pd paritycodec.Decoder) {
 	pd.DecodeCollection(
 		func(n int) { *e = make([]Extrinsic, n) },
-		func(i int) { (&(*e)[i]).ParityDecode(pd) },
+		func(i int) { (*e)[i] = DecodeExtrinsic(pd) },
 	)
 }
 
 func (e Extrinsics) ParityEncode(pe paritycodec.Encoder) {
 	pe.EncodeCollection(
 		len(e),
-		func(i int) { e[i].ParityEncode(pe) },
+		func(i int) { EncodeExtrinsic(e[i], pe) },
 	)
 }
 
@@ -176,7 +206,7 @@ const (
 var NONCE_OF = []byte("nonce:")
 var BALANCE_OF = []byte("balance:")
 
-func executeTransactionBackend(utx Extrinsic) Result {
+func executeTransactionBackend(utx TransferExtrinsic) Result {
 	// check signature
 	utx.signature.Verify(paritycodec.ToBytes(utx.transfer), primitives.H256(utx.transfer.from))
 
@@ -227,7 +257,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	// check transaction trie root represents the transactions.
 	txs := make([][]byte, len(block.extrinsics))
 	for i, e := range block.extrinsics {
-		txs[i] = paritycodec.ToBytes(e)
+		txs[i] = paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { EncodeExtrinsic(e, pe) })
 	}
 
 	txsRoot := srio.EnumeratedTrieRootBlake256ForByteSlices(txs)
@@ -239,7 +269,7 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	for i, e := range block.extrinsics {
 		storage.Put(EXTRINSIC_INDEX,
 			paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { pe.EncodeInt32(int32(i)) }))
-		res := executeTransactionBackend(e)
+		res := executeTransactionBackend(e.(TransferExtrinsic))
 		storage.Kill(EXTRINSIC_INDEX)
 		if res.isError {
 			panic("Extrinsic error " + strconv.Itoa(int(res.okOrErrorCode)))

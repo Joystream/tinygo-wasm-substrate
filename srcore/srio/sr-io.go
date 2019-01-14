@@ -22,7 +22,7 @@ func Print(s string) {
 }
 
 // Debug printing of a byte array. ASCII characters are printed as is
-// TODO: bytes as decimal ints, hexadecimal
+// TODO: bytes as decimal ints
 
 func SprintBytes(bs []byte) string {
 	s1 := []string{}
@@ -36,9 +36,31 @@ func SprintBytes(bs []byte) string {
 			} else {
 				ss = "\\x" + ss
 			}
+			s1 = append(s1, ss)
 		}
 	}
 	return strings.Join(s1, "")
+}
+
+func SprintHex(bs []byte) string {
+	s1 := []string{}
+	for _, b := range bs {
+		ss := strconv.FormatUint(uint64(b), 16)
+		if len(ss) < 2 {
+			ss = "0" + ss
+		}
+		s1 = append(s1, ss)
+	}
+	return strings.Join(s1, "")
+}
+
+func SprintDec(bs []byte) string {
+	s1 := []string{}
+	for _, b := range bs {
+		ss := strconv.FormatUint(uint64(b), 10)
+		s1 = append(s1, ss)
+	}
+	return "[" + strings.Join(s1, ", ") + "]"
 }
 
 //go:export io_get_stdout
