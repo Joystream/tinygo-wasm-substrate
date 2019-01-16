@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/srio"
 	"github.com/Joystream/tinygo-wasm-substrate/wasmhelpers"
 	paritycodec "github.com/kyegupov/parity-codec-go/noreflect"
 )
@@ -23,7 +24,14 @@ type TinyGoClosure struct {
 	wasmTableIndex uint32
 }
 
+type TinyGoExportedFuncValueRepresentation struct {
+	wasmTableIndex uint32
+}
+
+// Not actually used as export, but go:export prevents tinygo from adding the "closure pointer" as an additional parameter
+//go:export DispatchThunk
 func DispatchThunk(
+	_exportABI struct{},
 	serialized_args_ptr *byte,
 	serialized_args_len uintptr,
 	state *byte,
@@ -41,9 +49,12 @@ func DispatchThunk(
 
 	// TODO: dealloc result
 
-	return wasmhelpers.ReturnSlice(paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) {
+	retBytes := paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) {
 		resultOrErr.ReturnValueEncode(pe)
-	}))
+	})
+	// Can't just use ReturnSlice because https://github.com/paritytech/substrate/issues/1457
+	encodedSlice := wasmhelpers.ReturnSlice(retBytes)
+	return ((encodedSlice & 0xffffffff) << 32) | ((encodedSlice & 0xffffffff00000000) >> 32)
 }
 
 func NewMemory(pages uint32, maxPages uint32) (primitives.ExternMemory, Error) {
@@ -65,14 +76,14 @@ type EnvironmentDefinitionBuilder struct {
 	retained_memories []primitives.ExternMemory
 }
 
-func (e EnvironmentDefinitionBuilder) AddHostFunc(module string, name string, function Func) {
+func (e *EnvironmentDefinitionBuilder) AddHostFunc(module string, name string, function Func) {
 	funcClosure := *(*TinyGoClosure)(unsafe.Pointer(&function))
 
 	e.env_def.Entries = append(e.env_def.Entries,
 		primitives.Entry{module, name, primitives.ExternFunction{uint32(funcClosure.wasmTableIndex)}})
 }
 
-func (e EnvironmentDefinitionBuilder) AddMemory(module string, name string, memory primitives.ExternMemory) {
+func (e *EnvironmentDefinitionBuilder) AddMemory(module string, name string, memory primitives.ExternMemory) {
 	e.env_def.Entries = append(e.env_def.Entries,
 		primitives.Entry{module, name, memory})
 }
@@ -82,7 +93,7 @@ type Error int
 const (
 	NoError Error = iota
 
-	/// Module is not valid, couldn't be instantiated or it's `start` function trapped
+	/// Module is not valid, couldn't be instantiated or its `start` function trapped
 	/// when executed.
 	ErrModule
 
@@ -119,12 +130,17 @@ const ERR_EXECUTION uint32 = math.MaxUint32 - 2
 func NewInstance(code []byte, env_def_builder EnvironmentDefinitionBuilder, state unsafe.Pointer) (Instance, Error) {
 	serialized_env_def := paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) {
 		pe.EncodeCollection(len(env_def_builder.env_def.Entries), func(i int) {
+			pe.EncodeString(env_def_builder.env_def.Entries[i].ModuleName)
+			pe.EncodeString(env_def_builder.env_def.Entries[i].FieldName)
 			env_def_builder.env_def.Entries[i].Entity.ExternEntityEncode(pe)
 		})
 	})
 
 	dthunk := DispatchThunk
-	dthunkClosure := *(*TinyGoClosure)(unsafe.Pointer(&dthunk))
+
+	dthunkClosure := *(*TinyGoExportedFuncValueRepresentation)(unsafe.Pointer(&dthunk))
+
+	srio.Print(strconv.Itoa(int(dthunkClosure.wasmTableIndex)))
 
 	instanceIdx := ext_sandbox_instantiate(
 		dthunkClosure.wasmTableIndex,
@@ -174,15 +190,3 @@ func (i Instance) Invoke(
 		panic("Invalid ext_sandbox_invoke result: " + strconv.Itoa(int(result)))
 	}
 }
-
-// 		match result {
-// 			sandbox_primitives::ERR_OK => {
-// 				return_val = sandbox_primitives::ReturnValue::decode(&mut &return_val[..])
-// 					.ok_or(Error::Execution)?;
-// 				Ok(return_val)
-// 			}
-// 			sandbox_primitives::ERR_EXECUTION => Err(Error::Execution),
-// 			_ => unreachable!(),
-// 		}
-// 	}
-// }

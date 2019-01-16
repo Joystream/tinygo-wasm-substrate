@@ -30,7 +30,7 @@ Use a patched Tinygo compiler:
 
     go get -u github.com/kyegupov/tinygo
 
-*(TODO: push the compiler patch upstream)*
+*(TODO: push the compiler patches upstream)*
 
 Build the module:
 
@@ -56,7 +56,8 @@ All tests shall pass.
 
     cargo test sandbox
 
-(Note: sandbox tests are still a work in progress).
+All tests shall pass.
+
 
 ## How to run test-runtime module
 
