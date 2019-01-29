@@ -10,7 +10,11 @@ func (h *H256) ParityDecode(pd paritycodec.Decoder) {
 	pd.Read(h[:])
 }
 
-func (h H256) ParityEncode(pe paritycodec.Encoder) {
+func (h *H256) AsBytes() []byte {
+	return h[:]
+}
+
+func (h *H256) ParityEncode(pe paritycodec.Encoder) {
 	pe.Write(h[:])
 }
 
@@ -20,6 +24,6 @@ func (h *H512) ParityDecode(pd paritycodec.Decoder) {
 	pd.Read(h[:])
 }
 
-func (h H512) ParityEncode(pe paritycodec.Encoder) {
+func (h *H512) ParityEncode(pe paritycodec.Encoder) {
 	pe.Write(h[:])
 }

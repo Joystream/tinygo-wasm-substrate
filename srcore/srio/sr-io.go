@@ -9,6 +9,7 @@ import (
 
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
 	. "github.com/Joystream/tinygo-wasm-substrate/wasmhelpers"
+	codec "github.com/kyegupov/parity-codec-go/noreflect"
 )
 
 // Adapters for external functions, provided by the host
@@ -88,6 +89,14 @@ func resource_write(id int32, ptr *byte, length uintptr) uintptr {
 	return length
 }
 
+func EnumeratedTrieRootBlake256(values []codec.Encodeable) [32]byte {
+	byteValues := make([][]byte, len(values))
+	for i, v := range values {
+		byteValues[i] = codec.ToBytes(v)
+	}
+	return EnumeratedTrieRootBlake256ForByteSlices(byteValues)
+}
+
 func EnumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	lengths := make([]uintptr, len(values))
 	for i, v := range values {
@@ -110,11 +119,11 @@ func EnumeratedTrieRootBlake256ForByteSlices(values [][]byte) [32]byte {
 	return result
 }
 
-func StoragePut(key []byte, value []byte) {
+func UnhashedPut(key []byte, value []byte) {
 	ext_set_storage(GetOffset(key), GetLen(key), GetOffset(value), GetLen(value))
 }
 
-func StorageGet(key []byte) (bool, []byte) {
+func UnhashedGet(key []byte) (bool, []byte) {
 	var valueLen uintptr
 	valuePtr := ext_get_allocated_storage(GetOffset(key), GetLen(key), &valueLen)
 	if valueLen == math.MaxUint32 {
@@ -123,7 +132,7 @@ func StorageGet(key []byte) (bool, []byte) {
 	return true, Slice(valuePtr, valueLen)
 }
 
-func StorageKill(key []byte) {
+func UnhashedKill(key []byte) {
 	ext_clear_storage(GetOffset(key), GetLen(key))
 }
 

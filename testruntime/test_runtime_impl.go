@@ -40,16 +40,14 @@ func coreVersion(_ *byte, _ uint32) uint64 {
 		}))
 }
 
-type AuthorityId [32]byte
-
-func (t *AuthorityId) ParityDecode(pd paritycodec.Decoder) {
-	(*primitives.H256)(t).ParityDecode(pd)
-}
-
 type AccountId primitives.H256
 
-func (t AccountId) ParityEncode(pe paritycodec.Encoder) {
-	(primitives.H256)(t).ParityEncode(pe)
+func (t *AccountId) ParityEncode(pe paritycodec.Encoder) {
+	(*primitives.H256)(t).ParityEncode(pe)
+}
+
+func (t *AccountId) ParityDecode(pd paritycodec.Decoder) {
+	(*primitives.H256)(t).ParityDecode(pd)
 }
 
 type Transfer struct {
@@ -60,30 +58,30 @@ type Transfer struct {
 }
 
 func (t *Transfer) ParityDecode(pd paritycodec.Decoder) {
-	(*primitives.H256)(&t.from).ParityDecode(pd)
-	(*primitives.H256)(&t.to).ParityDecode(pd)
+	(&t.from).ParityDecode(pd)
+	(&t.to).ParityDecode(pd)
 	t.amount = pd.DecodeUint64()
 	t.nonce = pd.DecodeUint64()
 }
 
-func (t Transfer) ParityEncode(pe paritycodec.Encoder) {
-	(primitives.H256)(t.from).ParityEncode(pe)
-	(primitives.H256)(t.to).ParityEncode(pe)
+func (t *Transfer) ParityEncode(pe paritycodec.Encoder) {
+	(&t.from).ParityEncode(pe)
+	(&t.to).ParityEncode(pe)
 	pe.EncodeUint64(t.amount)
 	pe.EncodeUint64(t.nonce)
 }
 
 type Extrinsic interface {
-	ExtrinsicVariant() (byte, paritycodec.Encodeable)
+	srprimitives.Extrinsic
 }
 
 func EncodeExtrinsic(ex Extrinsic, pe paritycodec.Encoder) {
-	b, v := ex.ExtrinsicVariant()
-	pe.EncodeByte(b)
-	v.ParityEncode(pe)
+	ex.EncodeableEnum().ParityEncode(pe)
 }
 
-func DecodeExtrinsic(pd paritycodec.Decoder) Extrinsic {
+type typeParamsFactory struct{}
+
+func (_ typeParamsFactory) DecodeExtrinsic(pd paritycodec.Decoder) srprimitives.Extrinsic {
 	b := pd.DecodeByte()
 	switch b {
 	case 0:
@@ -97,11 +95,21 @@ func DecodeExtrinsic(pd paritycodec.Decoder) Extrinsic {
 	}
 }
 
-type AuthoritiesChange []AuthorityId
+func (_ typeParamsFactory) NewHashOutput() srprimitives.HashOutput        { return &primitives.H256{} }
+func (_ typeParamsFactory) BlockNumber(i uint64) srprimitives.BlockNumber { return BlockNumber(i) }
+func (_ typeParamsFactory) DecodeDigestItem(pd paritycodec.Decoder) srprimitives.DigestItem {
+	return srprimitives.DecodeDigestItem(pd, authorityIdFactory)
+}
+
+type AuthoritiesChange []primitives.Ed25519AuthorityId
 
 type TransferExtrinsic struct {
 	transfer  Transfer
 	signature srprimitives.Ed25519Signature
+}
+
+func (e TransferExtrinsic) IsSigned() (bool, bool) {
+	return true, true
 }
 
 func (e *TransferExtrinsic) ParityDecode(pd paritycodec.Decoder) {
@@ -111,65 +119,20 @@ func (e *TransferExtrinsic) ParityDecode(pd paritycodec.Decoder) {
 
 func (e TransferExtrinsic) ParityEncode(pe paritycodec.Encoder) {
 	e.transfer.ParityEncode(pe)
-	(primitives.H512)(e.signature).ParityEncode(pe)
+	(*primitives.H512)(&e.signature).ParityEncode(pe)
 }
 
-func (e TransferExtrinsic) ExtrinsicVariant() (byte, paritycodec.Encodeable) {
-	return 1, e
+func (e TransferExtrinsic) EncodeableEnum() primitives.EncodeableEnum {
+	return primitives.EncodeableEnum{1, e}
 }
 
 type BlockNumber uint64
 
-type HashOutput primitives.H256 // BlakeTwo256::Output
-
-type Header struct {
-	/// The parent hash.
-	parentHash HashOutput
-	/// The block number.
-	number BlockNumber
-	/// The state trie merkle root
-	stateRoot HashOutput
-	/// The merkle root of the extrinsics.
-	extrinsicsRoot HashOutput
-	/// A chain-specific digest of data useful for light clients or referencing auxiliary data.
-	digest srprimitives.Digest
+func (b BlockNumber) AsUint64() uint64 {
+	return uint64(b)
 }
 
-func (h *Header) ParityDecode(pd paritycodec.Decoder) {
-	(*primitives.H256)(&h.parentHash).ParityDecode(pd)
-	h.number = BlockNumber(pd.DecodeUintCompact())
-	(*primitives.H256)(&h.stateRoot).ParityDecode(pd)
-	(*primitives.H256)(&h.extrinsicsRoot).ParityDecode(pd)
-	(&h.digest).ParityDecode(pd)
-}
-
-type Extrinsics []Extrinsic
-
-func (e *Extrinsics) ParityDecode(pd paritycodec.Decoder) {
-	pd.DecodeCollection(
-		func(n int) { *e = make([]Extrinsic, n) },
-		func(i int) { (*e)[i] = DecodeExtrinsic(pd) },
-	)
-}
-
-func (e Extrinsics) ParityEncode(pe paritycodec.Encoder) {
-	pe.EncodeCollection(
-		len(e),
-		func(i int) { EncodeExtrinsic(e[i], pe) },
-	)
-}
-
-type Block struct {
-	header     Header
-	extrinsics Extrinsics
-}
-
-func (b *Block) ParityDecode(pd paritycodec.Decoder) {
-	b.header.ParityDecode(pd)
-	b.extrinsics.ParityDecode(pd)
-}
-
-var EXTRINSIC_INDEX = []byte(":extrinsic_index")
+func authorityIdFactory() srprimitives.AuthorityId { return &primitives.Ed25519AuthorityId{} }
 
 type Result struct {
 	isError       bool
@@ -208,10 +171,10 @@ var BALANCE_OF = []byte("balance:")
 
 func executeTransactionBackend(utx TransferExtrinsic) Result {
 	// check signature
-	utx.signature.Verify(paritycodec.ToBytes(utx.transfer), primitives.H256(utx.transfer.from))
+	utx.signature.Verify(paritycodec.ToBytes(&utx.transfer), primitives.H256(utx.transfer.from))
 
 	// check nonce
-	nonce_key := ConcatByteSlices(NONCE_OF, paritycodec.ToBytes(utx.transfer.from))
+	nonce_key := ConcatByteSlices(NONCE_OF, paritycodec.ToBytes(&utx.transfer.from))
 	expected_nonce := storage.GetUint64Or(nonce_key, 0)
 	if utx.transfer.nonce != expected_nonce {
 		return Err(Stale)
@@ -221,14 +184,14 @@ func executeTransactionBackend(utx TransferExtrinsic) Result {
 	storage.PutUint64(nonce_key, expected_nonce+1)
 
 	// check sender balance
-	from_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.ToBytes(utx.transfer.from))
+	from_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.ToBytes(&utx.transfer.from))
 	from_balance := storage.GetUint64Or(from_balance_key, 0)
 
 	// enact transfer
 	if utx.transfer.amount > from_balance {
 		return Err(CantPay)
 	}
-	to_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.ToBytes(utx.transfer.to))
+	to_balance_key := ConcatByteSlices(BALANCE_OF, paritycodec.ToBytes(&utx.transfer.to))
 	to_balance := storage.GetUint64Or(to_balance_key, 0)
 	storage.PutUint64(from_balance_key, from_balance-utx.transfer.amount)
 	storage.PutUint64(to_balance_key, to_balance+utx.transfer.amount)
@@ -249,49 +212,63 @@ func digestEqual(d1 srprimitives.Digest, d2 srprimitives.Digest) bool {
 
 //go:export Core_execute_block
 func executeBlock(offset *byte, length uintptr) uint64 {
-	block := Block{}
+	block := srprimitives.Block{}
 	mr := NewMemReader(offset, length)
 	pd := paritycodec.Decoder{&mr}
-	block.ParityDecode(pd)
+	block.ParityDecode(pd, typeParamsFactory{})
+
+	srio.Print("1")
 
 	// check transaction trie root represents the transactions.
-	txs := make([][]byte, len(block.extrinsics))
-	for i, e := range block.extrinsics {
-		txs[i] = paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { EncodeExtrinsic(e, pe) })
+	txs := make([][]byte, len(block.Extrinsics))
+	for i, e := range block.Extrinsics {
+		srio.Print("a")
+		txs[i] = paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { EncodeExtrinsic(e.(Extrinsic), pe) })
 	}
 
+	srio.Print("2")
+
 	txsRoot := srio.EnumeratedTrieRootBlake256ForByteSlices(txs)
-	if txsRoot != block.header.extrinsicsRoot {
+	if txsRoot != *block.Header.ExtrinsicsRoot.(*primitives.H256) {
 		panic("Transaction trie root must be valid.")
 	}
 
+	srio.Print("3")
+
 	// execute transactions
-	for i, e := range block.extrinsics {
-		storage.Put(EXTRINSIC_INDEX,
+	for i, e := range block.Extrinsics {
+		storage.Put(srio.EXTRINSIC_INDEX,
 			paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { pe.EncodeInt32(int32(i)) }))
 		res := executeTransactionBackend(e.(TransferExtrinsic))
-		storage.Kill(EXTRINSIC_INDEX)
+		storage.Kill(srio.EXTRINSIC_INDEX)
 		if res.isError {
 			panic("Extrinsic error " + strconv.Itoa(int(res.okOrErrorCode)))
 		}
 	}
 
+	srio.Print("4")
+
 	sr := srio.StorageRoot()
-	if *sr != primitives.H256(block.header.stateRoot) {
+	if *sr != *block.Header.StateRoot.(*primitives.H256) {
 		panic("storage. root must match that calculated.")
 	}
 
+	srio.Print("5")
+
 	// check digest
-	digest := srprimitives.Digest{[]srprimitives.DigestItem{}, func() srprimitives.AuthorityId { return &AuthorityId{} }}
+	digest := srprimitives.Digest{[]srprimitives.DigestItem{}}
 	if len(digest.Logs) > 0 {
 		panic("whoa")
 	}
-	phb := block.header.parentHash[:]
-	ok, scr := srio.StorageChangesRoot(phb, uint64(block.header.number)-1)
+	phb := block.Header.ParentHash.(*primitives.H256)[:]
+	ok, scr := srio.StorageChangesRoot(phb, block.Header.Number.AsUint64()-1)
+
+	srio.Print("6")
+
 	if ok {
 		digest.Logs = append(digest.Logs, srprimitives.ChangesTrieRoot(*scr))
 	}
-	if !digestEqual(digest, block.header.digest) {
+	if !digestEqual(digest, block.Header.Digest) {
 		panic("Header digest items must match that calculated.")
 	}
 	return 0

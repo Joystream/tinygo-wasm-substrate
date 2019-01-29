@@ -12,18 +12,18 @@ func test_data_in(offset *byte, len uintptr) uint64 {
 	print("set_storage")
 
 	key := []byte("input")
-	srio.StoragePut(key, Slice(offset, len))
+	srio.UnhashedPut(key, Slice(offset, len))
 
 	print("storage")
 	key = []byte("foo")
-	ok, foo := srio.StorageGet(key)
+	ok, foo := srio.UnhashedGet(key)
 	if !ok {
 		panic("No value for this key")
 	}
 
 	print("set_storage")
 	key = []byte("baz")
-	srio.StoragePut(key, foo)
+	srio.UnhashedPut(key, foo)
 
 	print("finished!")
 	return ReturnSlice([]byte("all ok!"))

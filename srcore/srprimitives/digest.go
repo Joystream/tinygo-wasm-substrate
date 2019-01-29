@@ -12,18 +12,28 @@ type AuthorityId interface {
 }
 
 type Digest struct {
-	Logs       []DigestItem
-	AidFactory func() AuthorityId // pseudo-generic
+	Logs []DigestItem
 }
 
-func (d *Digest) ParityDecode(pd paritycodec.Decoder) {
-	pd.DecodeCollection(
-		func(n int) { d.Logs = make([]DigestItem, n) },
-		func(i int) { d.Logs[i] = DecodeDigestItem(pd, d.AidFactory) },
+func (d Digest) ParityEncode(pe paritycodec.Encoder) {
+	pe.EncodeCollection(
+		len(d.Logs),
+		func(i int) {
+			pe.EncodeByte(byte(d.Logs[i].DigestItemType()))
+			panic("Digest item encoding not implemented")
+			// TODO: d.Logs[i].ParityEncode(pe)
+		},
 	)
 }
 
-type DigestItemType int
+func (d *Digest) ParityDecodeDigest(pd paritycodec.Decoder, itemDecoder func(paritycodec.Decoder) DigestItem) {
+	pd.DecodeCollection(
+		func(n int) { d.Logs = make([]DigestItem, n) },
+		func(i int) { d.Logs[i] = itemDecoder(pd) },
+	)
+}
+
+type DigestItemType byte
 
 const (
 	DtOther             DigestItemType = 0
@@ -33,7 +43,17 @@ const (
 )
 
 type DigestItem interface {
-	ImplementsDigestItem() DigestItemType
+	// paritycodec.Encodeable
+	DigestItemType() DigestItemType
+}
+
+// Below are subtypes of of "enum DigestItem", the default digest item type
+
+/// Digest item that is able to encode/decode 'system' digest items and
+/// provide opaque access to other items.
+
+func DigestItemFactory(aidFactory func() AuthorityId) func(paritycodec.Decoder) DigestItem {
+	return func(pd paritycodec.Decoder) DigestItem { return DecodeDigestItem(pd, aidFactory) }
 }
 
 func DecodeDigestItem(pd paritycodec.Decoder, aidFactory func() AuthorityId) DigestItem {
@@ -69,14 +89,17 @@ func (a *AuthoritiesChange) ParityDecode(pd paritycodec.Decoder, aidFactory func
 	)
 }
 
-func (di AuthoritiesChange) ImplementsDigestItem() DigestItemType { return DtAuthoritiesChange }
+func (di AuthoritiesChange) DigestItemType() DigestItemType { return DtAuthoritiesChange }
 
 /// System digest item that contains the root of changes trie at given
 /// block. It is created for every block iff runtime supports changes
 /// trie creation.
+/// TODO: *H256
 type ChangesTrieRoot primitives.H256
 
-func (di ChangesTrieRoot) ImplementsDigestItem() DigestItemType { return DtChangesTrieRoot }
+func (di ChangesTrieRoot) DigestItemType() DigestItemType { return DtChangesTrieRoot }
+
+// end "enum DigestItem"
 
 type Signature primitives.H512
 
@@ -91,9 +114,9 @@ func (s *Seal) ParityDecode(pd paritycodec.Decoder) {
 	(*primitives.H512)(&s.signature).ParityDecode(pd)
 }
 
-func (di Seal) ImplementsDigestItem() DigestItemType { return DtSeal }
+func (di Seal) DigestItemType() DigestItemType { return DtSeal }
 
 /// Any 'non-system' digest item, opaque to the native code.
 type OtherDigestItem []byte
 
-func (di OtherDigestItem) ImplementsDigestItem() DigestItemType { return DtOther }
+func (di OtherDigestItem) DigestItemType() DigestItemType { return DtOther }
