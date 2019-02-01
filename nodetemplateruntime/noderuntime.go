@@ -218,7 +218,7 @@ func initialise_block(header srprimitives.Header) {
 
 //go:export "Metadata_metadata"
 func metadata() metadatamodule.RuntimeMetadata {
-	return (runtimemodule.Runtime)(runtime).GetMetadata()
+	return (*runtimemodule.Runtime)(&runtime).GetMetadata()
 }
 
 //go:export "BlockBuilder_apply_extrinsic"
@@ -233,12 +233,12 @@ func finalise_block() srprimitives.Header {
 
 //go:export "BlockBuilder_inherent_extrinsics"
 func inherent_extrinsics(data inherents.InherentData) []srprimitives.Extrinsic {
-	return data.CreateExtrinsics((runtimemodule.Runtime)(runtime))
+	return data.CreateExtrinsics((*runtimemodule.Runtime)(&runtime))
 }
 
 //go:export "BlockBuilder_check_inherents"
 func check_inherents(block srprimitives.Block, data inherents.InherentData) inherents.CheckInherentsResult {
-	return data.CheckExtrinsics((runtimemodule.Runtime)(runtime), block)
+	return data.CheckExtrinsics((*runtimemodule.Runtime)(&runtime), block)
 }
 
 //go:export "BlockBuilder_random_seed"

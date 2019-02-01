@@ -4,7 +4,7 @@ import (
 	"bytes"
 
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srprimitives"
-	"github.com/Joystream/tinygo-wasm-substrate/srml/support/runtime"
+	runtimemodule "github.com/Joystream/tinygo-wasm-substrate/srml/support/runtime"
 	codec "github.com/kyegupov/parity-codec-go/noreflect"
 )
 
@@ -120,10 +120,10 @@ func (c *CheckInherentsResult) PutError(identifier InherentIdentifier, err Check
 	c.FatalError = err.IsFatalError()
 }
 
-func (i *InherentData) CreateExtrinsics(runtime runtime.Runtime) []srprimitives.Extrinsic {
+func (i *InherentData) CreateExtrinsics(runtime *runtimemodule.Runtime) []srprimitives.Extrinsic {
 	inherents := []srprimitives.Extrinsic{}
 	for _, m := range runtime.Modules {
-		mi, ok := m.(ProvideInherent)
+		mi, ok := m.Module.(ProvideInherent)
 		if ok {
 			inherent := mi.CreateInherent(i)
 			if inherent != nil {
@@ -135,7 +135,7 @@ func (i *InherentData) CreateExtrinsics(runtime runtime.Runtime) []srprimitives.
 	return inherents
 }
 
-func (i *InherentData) CheckExtrinsics(runtime runtime.Runtime, block srprimitives.Block) CheckInherentsResult {
+func (i *InherentData) CheckExtrinsics(runtime *runtimemodule.Runtime, block srprimitives.Block) CheckInherentsResult {
 
 	result := NewCheckInherentsResult()
 	for _, xt := range block.Extrinsics {
@@ -144,19 +144,16 @@ func (i *InherentData) CheckExtrinsics(runtime runtime.Runtime, block srprimitiv
 			break
 		}
 
-		function := xt.GetFunction()
-		for _, m := range runtime.Modules {
-			if m.CallableBelongsToThisModule(function) {
-				mi, ok := m.(ProvideInherent)
-				if ok {
-					err := mi.CheckInherent(function, i)
-					if err != nil {
-						result.PutError(mi.InherentIdentifier(), err) // Panic if more than one fatal error
-					}
-					if err.IsFatalError() {
-						return result
-					}
-				}
+		function := xt.GetFunction().(runtimemodule.RuntimeCall)
+		m := runtime.ModuleForCall(function)
+		mi, ok := m.(ProvideInherent)
+		if ok {
+			err := mi.CheckInherent(function, i)
+			if err != nil {
+				result.PutError(mi.InherentIdentifier(), err) // Panic if more than one fatal error
+			}
+			if err.IsFatalError() {
+				return result
 			}
 		}
 	}
