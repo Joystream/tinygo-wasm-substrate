@@ -19,20 +19,19 @@ func (m *BaseModule) AddMethod(c srprimitives.Callable) {
 	m.methods = append(m.methods, c)
 }
 
-// Corresponds to "Call" enum generated for Rust modules
-type ModuleCall struct {
-	methodIndex int
-	method      srprimitives.Callable
-}
+// // Corresponds to "Call" enum generated for Rust modules
+// type ModuleCall struct {
+// 	methodIndex byte
+// 	method      srprimitives.Callable
+// }
 
-func (c ModuleCall) Dispatch(o srprimitives.Origin) error {
-	return c.method.Dispatch(o)
-}
+// func (c ModuleCall) Dispatch(o srprimitives.Origin) error {
+// 	return c.method.Dispatch(o)
+// }
 
-func (c ModuleCall) ParityEncode(pe codec.Encoder) {
-	pe.EncodeByte(byte(c.methodIndex))
-	c.method.ParityEncode(pe)
-}
+// func (c ModuleCall) EncodeableEnum() primitives.EncodeableEnum {
+// 	return primitives.EncodeableEnum{c.methodIndex, c.method.EncodeableEnum()}
+// }
 
 // Every Runtime should implement this
 type TypeParamsFactory interface {

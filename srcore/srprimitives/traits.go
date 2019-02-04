@@ -1,6 +1,7 @@
 package srprimitives
 
 import (
+	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
 	codec "github.com/kyegupov/parity-codec-go/noreflect"
 )
 
@@ -8,7 +9,7 @@ type Origin interface{}
 
 // See support/dispatch
 type Callable interface {
-	codec.Encodeable
+	primitives.Enum
 	Dispatch(Origin) error
 }
 

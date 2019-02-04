@@ -13,6 +13,7 @@ import (
 )
 
 type Module struct {
+	support.BaseModule
 	TypeParamsFactory   support.TypeParamsFactory
 	BlockHashStore      storage.MapStorageValue
 	AccountNonceStore   storage.MapStorageValue
@@ -206,9 +207,9 @@ func (m *Module) NoteExtrinsic(encodedXt []byte) {
 /// To be called immediately after an extrinsic has been applied.
 func (m *Module) NoteAppliedExtrinsic(maybeError error) {
 	if maybeError != nil {
-		m.DepositEvent(EventExtrinsicSuccess{})
+		m.DepositEventCall(EventExtrinsicSuccess{}).Dispatch()
 	} else {
-		m.DepositEvent(EventExtrinsicFailed{})
+		m.DepositEventCall(EventExtrinsicFailed{}).Dispatch()
 	}
 	_, exInd := m.ExtrinsicIndex()
 	nextExtrinsicIndex := exInd + 1
@@ -239,29 +240,35 @@ func (m *Module) DeriveExtrinsics() {
 	m.ExtrinsicsRootStore.Put(&xtsRoot)
 }
 
+// Method IDs
+const (
+	DepositEventId byte = 0
+)
+
 type DepositEventCall struct {
 	m     *Module
-	Event support.Event
+	event support.Event
 }
 
-func (d DepositEventCall) ParityEncode(pd codec.Encoder) {
-	// TODO: implement encoding confroming to the macro implementation in Rust
+func (d DepositEventCall) EncodeableEnum() primitives.EncodeableEnum {
+	return primitives.EncodeableEnum{DepositEventId, d.event}
+}
+
+func (m *Module) DepositEventCall(event support.Event) DepositEventCall {
+	return DepositEventCall{m, event}
 }
 
 func (c DepositEventCall) Dispatch(o srprimitives.Origin) error {
-	c.m.DepositEvent(c.Event)
-	return nil
-}
 
-func (m *Module) DepositEvent(event support.Event) {
-	ok, extrinsicIndex := m.ExtrinsicIndex()
+	ok, extrinsicIndex := c.m.ExtrinsicIndex()
 	var phase Phase = PhaseFinalization{}
 	if ok {
 		phase = PhaseApplyExtrinsic(extrinsicIndex)
 	}
-	events := m.EventsStore.Get().([]EventRecord)
-	events = append(events, EventRecord{phase, event})
-	m.EventsStore.Put(EventRecords(events))
+	events := c.m.EventsStore.Get().([]EventRecord)
+	events = append(events, EventRecord{phase, c.event})
+	c.m.EventsStore.Put(EventRecords(events))
+	return nil
 }
 
 func (m *Module) CallableBelongsToThisModule(c srprimitives.Callable) bool {
