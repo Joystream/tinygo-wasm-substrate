@@ -5,9 +5,9 @@ import (
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srprimitives"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srversion"
+	executivemodule "github.com/Joystream/tinygo-wasm-substrate/srml/executive"
 	metadatamodule "github.com/Joystream/tinygo-wasm-substrate/srml/metadata"
 	"github.com/Joystream/tinygo-wasm-substrate/srml/support"
-	executivemodule "github.com/Joystream/tinygo-wasm-substrate/srml/support/executive"
 	runtimemodule "github.com/Joystream/tinygo-wasm-substrate/srml/support/runtime"
 	codec "github.com/kyegupov/parity-codec-go/noreflect"
 )

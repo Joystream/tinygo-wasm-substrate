@@ -8,7 +8,7 @@ import (
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srio"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srprimitives"
-	"github.com/Joystream/tinygo-wasm-substrate/srml/support/system"
+	"github.com/Joystream/tinygo-wasm-substrate/srml/system"
 	codec "github.com/kyegupov/parity-codec-go/noreflect"
 )
 
@@ -39,45 +39,33 @@ func (e *Executive) InitialiseBlock(header *srprimitives.Header) {
 }
 
 func (e *Executive) InitialChecks(block *srprimitives.Block) {
-	// check parent_hash is correct.
-	n := block.Header.Number
-	if !(n.NonZero() && e.SystemModule.BlockHashStore.Get(n.MinusOne()) == block.Header.ParentHash) {
-		panic("Parent hash should be valid.")
+	header := &block.Header
+	n := header.Number
+	gohelpers.Assert(n.GreaterThan(e.SystemModule.TypeParamsFactory.BlockNumber(0)) &&
+		e.SystemModule.BlockHashStore.Get(n.MinusOne()) == header.ParentHash,
+		"Parent hash should be valid.",
+	)
+	extrinsics := make([]codec.Encodeable, len(block.Extrinsics))
+	for i := range extrinsics {
+		extrinsics[i] = block.Extrinsics[i].EncodeableEnum()
 	}
-
-	// check transaction trie root represents the transactions.
-	// TODO: support generic hashers (Rust Substrate does not yet, as of January 2019)
-	r := make([]codec.Encodeable, len(block.Extrinsics))
-	for i, e := range block.Extrinsics {
-		r[i] = e.EncodeableEnum()
-	}
-	xtsRoot := srio.EnumeratedTrieRootBlake256(r)
-	if *(block.Header.ExtrinsicsRoot.(*primitives.H256)) != primitives.H256(xtsRoot) {
-		panic("Transaction trie root must be valid.")
-	}
+	xtsRoot := primitives.H256(srio.EnumeratedTrieRootBlake256(extrinsics))
+	gohelpers.Assert(*header.ExtrinsicsRoot.(*primitives.H256) == xtsRoot,
+		"Transaction trie root must be valid.")
 }
 
-/// Actually execute all transitioning for `block`.
 func (e *Executive) ExecuteBlock(block *srprimitives.Block) {
 	e.InitialiseBlock(&block.Header)
-
-	// any initial checks
 	e.InitialChecks(block)
-
 	for _, ext := range block.Extrinsics {
 		e.applyExtrinsicNoNote(ext)
 	}
-
-	// post-transactional book-keeping.
 	e.SystemModule.NoteFinishedExtrinsics()
 	e.Finalization.OnFinalise(block.Header.Number)
 
-	// any final checks
-	e.finalChecks(block.Header)
+	e.finalChecks(&block.Header)
 }
 
-/// Finalise the block - it is up the caller to ensure that all header fields are valid
-/// except state-root.
 func (e *Executive) FinaliseBlock() srprimitives.Header {
 	e.SystemModule.NoteFinishedExtrinsics()
 	e.Finalization.OnFinalise(e.SystemModule.NumberStore.Get().(srprimitives.BlockNumber))
@@ -175,7 +163,7 @@ func (e *Executive) applyExtrinsicNoNoteWithLen(uxt srprimitives.Extrinsic, enco
 	}
 }
 
-func (e *Executive) finalChecks(header srprimitives.Header) {
+func (e *Executive) finalChecks(header *srprimitives.Header) {
 	// remove temporaries.
 	newHeader := e.SystemModule.Finalise()
 

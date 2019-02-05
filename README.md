@@ -12,19 +12,72 @@ This is an experimental implementation of Substrate-compatible WASM modules in T
 (https://github.com/aykevl/tinygo/), a subset of Go language that is used for low-level
 targets.
 
+This implementation includes **SRML and core modules** that are required to build runtimes
+and **three example module implementations** to be verified against the Substrate platform.
+
+SRML is rougly 30% implemented (see below).
+
 (Unfortunately, using mainstream implementation of Go is currently infeasible, since
 WebAssembly support in Go is quite limited and the resulting code is encumbered by the
 huge Go runtime).
 
-## The status
+## Status: examples
 
 Currently we compile example modules that pass all the "black box" tests included in Substrade:
 
-* `core/executor` tests for basic IO and sandbox support
-* `core/test-runtime` tests for a basic `execute_block` implementation
+* `executortestmodule`: for `core/executor` tests for basic IO and sandbox support
+* `testruntime`: for `core/test-runtime` tests, a basic `execute_block` implementation
 
-The effort is ongoing to port the whole (the most) of the Substrate Core libraries and 
-Substrate Runtime Module Libraries.
+There is also an *incomplete* port of https://github.com/paritytech/substrate-node-template/
+in `nodetemplateruntime`.
+
+## Status: SRML
+
+SRML consists of various modules. Some (primitives, io, support, system, executive) are essential
+to running a module; some provide application-level functionality.
+
+Not all of SRML is ported to Go. The current status is approximately this:
+
+<table>
+<tr><th>Module</th><th>Percent done</th><th>Missing bits and general notes</th></tr>
+<tr><td>sr-api</td><td>0</td><td>Should not be converted as is (Rust macros that transform API definitions)</td></tr>
+<tr><td>sr-io</td><td>80</td><td>Missing: child storage, new hash functions (keccak, secp256k1), tests</td></tr>
+<tr><td>sr-primitives</td><td>35</td><td>Missing: permill/perbill, log macro, traits, era, uncheckeds</td></tr>
+<tr><td>sr-sandbox</td><td>95</td><td></td></tr>
+<tr><td>sr-version</td><td>50</td><td>Helper methods, serialization?</td></tr>
+<tr><td>state-machine</td><td>0</td><td>(maybe not needed at all for the runtime)?</td></tr>
+<tr><td>srml-assets</td><td>0</td><td></td></tr>
+<tr><td>srml-balances</td><td>0</td><td></td></tr>
+<tr><td>srml-consensus</td><td>0</td><td></td></tr>
+<tr><td>srml-contract</td><td>0</td><td></td></tr>
+<tr><td>srml-council</td><td>0</td><td></td></tr>
+<tr><td>srml-democracy</td><td>0</td><td></td></tr>
+<tr><td>srml-example,</td><td>0</td><td>Mostly valuable because of example code and comments</td></tr>
+<tr><td>srml-executive</td><td>65</td><td>Tests, latest changes</td></tr>
+<tr><td>srml-grandpa</td><td>0</td><td></td></tr>
+<tr><td>srml-indices</td><td>30</td><td>Address encoding, resolvehint, module+storage, tests</td></tr>
+<tr><td>srml-metadata</td><td>40</td><td>Additional types and serialization</td></tr>
+<tr><td>srml-session</td><td>0</td><td></td></tr>
+<tr><td>srml-staking</td><td>0</td><td></td></tr>
+<tr><td>srml-sudo</td><td>0</td><td></td></tr>
+<tr><td>srml-support/procedural/storage</td><td>80</td><td>(hard to judge, rust macros were converted to go runtime storage definitions)</td></tr>
+<tr><td>srml-support/src/dispatch</td><td>70</td><td>(hard to judge, rust macros were converted to go runtime module definitions)</td></tr>
+<tr><td>srml-support/src/double_map</td><td>0</td><td></td></tr>
+<tr><td>srml-support/src/event</td><td>0</td><td></td></tr>
+<tr><td>srml-support/src/hashable</td><td>0</td><td></td></tr>
+<tr><td>srml-support/src/inherent</td><td>60</td><td>(hard to judge, rust macros were converted to go runtime module definitions)</td></tr>
+<tr><td>srml-support/src/metadata</td><td>0</td><td></td></tr>
+<tr><td>srml-support/src/origin</td><td>0</td><td></td></tr>
+<tr><td>srml-support/src/runtime</td><td>70</td><td>(hard to judge, rust macros were converted to go runtime module definitions)</td></tr>
+<tr><td>srml-system</td><td>40</td><td>is_account, RawLog, add_extra_genesis, ensure_, externalities, set_, ChainContext, tests</td></tr>
+<tr><td>srml-timestamp</td><td>0</td><td></td></tr>
+<tr><td>srml-treasury</td><td>0</td><td></td></tr>
+<tr><td>srml-upgrade-key</td><td>0</td><td></td></tr>
+<tr><td>keyring</td><td>0</td><td></td></tr>
+<tr><td>client</td><td>0</td><td></td></tr>
+<tr><td>primitives</td><td>60</td><td>missing tests</td></tr>
+<tr><td>consensus-aura-primitives</td><td>0</td><td></td></tr>
+</table>
 
 ## Differences between Rust and Go implementations
 

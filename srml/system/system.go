@@ -207,9 +207,9 @@ func (m *Module) NoteExtrinsic(encodedXt []byte) {
 /// To be called immediately after an extrinsic has been applied.
 func (m *Module) NoteAppliedExtrinsic(maybeError error) {
 	if maybeError != nil {
-		m.DepositEventCall(EventExtrinsicSuccess{}).Dispatch()
+		m.DepositEventCall(EventExtrinsicSuccess{}).Dispatch(nil)
 	} else {
-		m.DepositEventCall(EventExtrinsicFailed{}).Dispatch()
+		m.DepositEventCall(EventExtrinsicFailed{}).Dispatch(nil)
 	}
 	_, exInd := m.ExtrinsicIndex()
 	nextExtrinsicIndex := exInd + 1
