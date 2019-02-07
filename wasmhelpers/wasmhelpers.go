@@ -69,15 +69,6 @@ func ConcatByteSlices(a []byte, b []byte) []byte {
 	return r
 }
 
-// TODO: why do we need this, as opposed to runtime.memset
-//go:export memset
-func memset(ptr unsafe.Pointer, c byte, size uintptr) unsafe.Pointer {
-	for i := uintptr(0); i < size; i++ {
-		*(*byte)(unsafe.Pointer(uintptr(ptr) + i)) = c
-	}
-	return ptr
-}
-
 // // TODO: why do we need this, as opposed to runtime.memmove
 // //go:export memmove
 // func memmove(dst, src unsafe.Pointer, size uintptr) {

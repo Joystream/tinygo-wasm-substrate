@@ -3,6 +3,7 @@ package main
 import (
 	"strconv"
 
+	"github.com/Joystream/tinygo-wasm-substrate/gohelpers"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/primitives"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srio"
 	"github.com/Joystream/tinygo-wasm-substrate/srcore/srprimitives"
@@ -95,8 +96,11 @@ func (_ typeParamsFactory) DecodeExtrinsic(pd paritycodec.Decoder) srprimitives.
 	}
 }
 
-func (_ typeParamsFactory) NewHashOutput() srprimitives.HashOutput        { return &primitives.H256{} }
-func (_ typeParamsFactory) BlockNumber(i uint64) srprimitives.BlockNumber { return BlockNumber(i) }
+func (_ typeParamsFactory) NewHashOutput() srprimitives.HashOutput { return &primitives.H256{} }
+func (_ typeParamsFactory) BlockNumber(i uint64) srprimitives.BlockNumber {
+	v := gohelpers.Uint64(i)
+	return &v
+}
 func (_ typeParamsFactory) DecodeDigestItem(pd paritycodec.Decoder) srprimitives.DigestItem {
 	return srprimitives.DecodeDigestItem(pd, authorityIdFactory)
 }
@@ -106,6 +110,10 @@ type AuthoritiesChange []primitives.Ed25519AuthorityId
 type TransferExtrinsic struct {
 	transfer  Transfer
 	signature srprimitives.Ed25519Signature
+}
+
+func (e TransferExtrinsic) GetFunction() srprimitives.Callable {
+	return nil
 }
 
 func (e TransferExtrinsic) IsSigned() (bool, bool) {
@@ -124,12 +132,6 @@ func (e TransferExtrinsic) ParityEncode(pe paritycodec.Encoder) {
 
 func (e TransferExtrinsic) EncodeableEnum() primitives.EncodeableEnum {
 	return primitives.EncodeableEnum{1, e}
-}
-
-type BlockNumber uint64
-
-func (b BlockNumber) AsUint64() uint64 {
-	return uint64(b)
 }
 
 func authorityIdFactory() srprimitives.AuthorityId { return &primitives.Ed25519AuthorityId{} }
@@ -217,23 +219,16 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	pd := paritycodec.Decoder{&mr}
 	block.ParityDecode(pd, typeParamsFactory{})
 
-	srio.Print("1")
-
 	// check transaction trie root represents the transactions.
 	txs := make([][]byte, len(block.Extrinsics))
 	for i, e := range block.Extrinsics {
-		srio.Print("a")
 		txs[i] = paritycodec.ToBytesCustom(func(pe paritycodec.Encoder) { EncodeExtrinsic(e.(Extrinsic), pe) })
 	}
-
-	srio.Print("2")
 
 	txsRoot := srio.EnumeratedTrieRootBlake256ForByteSlices(txs)
 	if txsRoot != *block.Header.ExtrinsicsRoot.(*primitives.H256) {
 		panic("Transaction trie root must be valid.")
 	}
-
-	srio.Print("3")
 
 	// execute transactions
 	for i, e := range block.Extrinsics {
@@ -246,14 +241,10 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 		}
 	}
 
-	srio.Print("4")
-
 	sr := srio.StorageRoot()
 	if *sr != *block.Header.StateRoot.(*primitives.H256) {
 		panic("storage. root must match that calculated.")
 	}
-
-	srio.Print("5")
 
 	// check digest
 	digest := srprimitives.Digest{[]srprimitives.DigestItem{}}
@@ -262,8 +253,6 @@ func executeBlock(offset *byte, length uintptr) uint64 {
 	}
 	phb := block.Header.ParentHash.(*primitives.H256)[:]
 	ok, scr := srio.StorageChangesRoot(phb, block.Header.Number.AsUint64()-1)
-
-	srio.Print("6")
 
 	if ok {
 		digest.Logs = append(digest.Logs, srprimitives.ChangesTrieRoot(*scr))
